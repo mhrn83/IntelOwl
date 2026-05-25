@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "api_app.engines_manager",
     "api_app.analyzables_manager",
     "api_app.user_events_manager",
+    "api_app.chatbot_manager",
     # auth
     "rest_email_auth",
     # performance debugging
@@ -72,6 +73,7 @@ from .a_secrets import *  # lgtm [py/polluting-import]
 from .auth import *  # lgtm [py/polluting-import]
 from .aws import *  # lgtm [py/polluting-import]
 from .cache import *  # lgtm [py/polluting-import]
+from .chatbot import *  # lgtm [py/polluting-import]
 
 # inject from other modules
 from .celery import *  # lgtm [py/polluting-import]
