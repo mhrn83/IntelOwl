@@ -1,0 +1,25 @@
+services:
+  ollama:
+    image: ollama/ollama:0.5.0
+    container_name: intelowl_ollama
+    hostname: ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./entrypoints/ollama.sh:/usr/local/bin/intelowl-ollama-entrypoint.sh:ro
+    expose:
+      - "11434"
+    env_file:
+      - env_file_app
+    entrypoint:
+      - /bin/sh
+      - /usr/local/bin/intelowl-ollama-entrypoint.sh
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+volumes:
+  ollama_data:

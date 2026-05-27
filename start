@@ -9,7 +9,7 @@ declare -A env_arguments=(["prod"]=1 ["test"]=1 ["ci"]=1)
 declare -A test_mode=(["test"]=1 ["ci"]=1)
 declare -A cmd_arguments=(["build"]=1 ["up"]=1 ["start"]=1 ["restart"]=1 ["down"]=1 ["stop"]=1 ["kill"]=1 ["logs"]=1 ["ps"]=1)
 
-declare -A path_mapping=(["default"]="docker/default.yml" ["postgres"]="docker/postgres.override.yml" ["rabbitmq"]="docker/rabbitmq.override.yml" ["test"]="docker/test.override.yml" ["ci"]="docker/ci.override.yml" ["custom"]="docker/custom.override.yml" ["traefik"]="docker/traefik.yml" ["traefik_prod"]="docker/traefik_prod.yml" ["traefik_local"]="docker/traefik_local.yml" ["multi_queue"]="docker/multi-queue.override.yml" ["test_multi_queue"]="docker/test.multi-queue.override.yml" ["flower"]="docker/flower.override.yml" ["test_flower"]="docker/test.flower.override.yml" ["elastic"]="docker/elasticsearch.override.yml" ["https"]="docker/https.override.yml" ["nfs"]="docker/nfs.override.yml" ["redis"]="docker/redis.override.yml" ["nginx_default"]="docker/nginx.override.yml")
+declare -A path_mapping=(["default"]="docker/default.yml" ["postgres"]="docker/postgres.override.yml" ["rabbitmq"]="docker/rabbitmq.override.yml" ["test"]="docker/test.override.yml" ["ci"]="docker/ci.override.yml" ["custom"]="docker/custom.override.yml" ["traefik"]="docker/traefik.yml" ["traefik_prod"]="docker/traefik_prod.yml" ["traefik_local"]="docker/traefik_local.yml" ["multi_queue"]="docker/multi-queue.override.yml" ["test_multi_queue"]="docker/test.multi-queue.override.yml" ["flower"]="docker/flower.override.yml" ["test_flower"]="docker/test.flower.override.yml" ["elastic"]="docker/elasticsearch.override.yml" ["https"]="docker/https.override.yml" ["nfs"]="docker/nfs.override.yml" ["redis"]="docker/redis.override.yml" ["nginx_default"]="docker/nginx.override.yml" ["ollama"]="docker/ollama.override.yml")
 print_synopsis () {
   echo "SYNOPSIS"
   echo -e "    start <env> <command> [OPTIONS]"
@@ -47,6 +47,8 @@ print_help () {
   echo "    --use-external-redis        Do NOT use redis.override.yml compose file."
   echo "    --rabbitmq                  Uses the rabbitmq.override.yml compose file."
   echo "    --flower                    Uses the flower.override.yml compose file."
+  echo "    --ollama                    Uses the ollama.override.yml compose file"
+  echo "                                to enable the local LLM chatbot service."
   echo "    --custom                    Uses custom.override.yml to leverage your"
   echo "                                customized configuration."
   echo "    --debug-build               See more verbose output from the build."
@@ -213,6 +215,10 @@ while [[ $# -gt 0 ]]; do
   ;;
   --flower)
     params["flower"]=true
+    shift 1
+  ;;
+  --ollama)
+    params["ollama"]=true
     shift 1
   ;;
   --custom)
