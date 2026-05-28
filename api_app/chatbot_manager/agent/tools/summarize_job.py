@@ -27,7 +27,7 @@ def make_summarize_job_tool(user):
         try:
             job = (
                 Job.objects.select_related("analyzable")
-                .prefetch_related("analyzer_reports__config", "analyzers_to_execute")
+                .prefetch_related("analyzerreports__config", "analyzers_to_execute")
                 .get(pk=job_id, user=user)
             )
         except Job.DoesNotExist:
@@ -36,10 +36,10 @@ def make_summarize_job_tool(user):
             )
 
         analyzers = list(job.analyzers_to_execute.values_list("name", flat=True))
-        # `analyzer_reports.*.status` uses ReportStatus (uppercase), distinct from the
+        # `analyzerreports.*.status` uses ReportStatus (uppercase), distinct from the
         # job-level Status enum: a report that did not succeed is considered failed here.
         failed_reports = [
-            r.config.name for r in job.analyzer_reports.all() if r.status != ReportStatus.SUCCESS.value
+            r.config.name for r in job.analyzerreports.all() if r.status != ReportStatus.SUCCESS.value
         ]
 
         lines = [

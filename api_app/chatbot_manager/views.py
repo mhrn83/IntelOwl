@@ -64,12 +64,6 @@ class ChatSessionViewSet(ModelViewSet):
         )
 
         return Response(
-            MessageResponseSerializer(
-                {
-                    "session_id": session.pk,
-                    "response": response_text,
-                    "message_id": ai_msg.pk,
-                }
-            ).data,
+            MessageResponseSerializer(ai_msg).data,
             status=status.HTTP_200_OK,
         )

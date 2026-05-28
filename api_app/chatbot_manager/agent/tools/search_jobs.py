@@ -25,10 +25,15 @@ def make_search_jobs_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "jobs": [...]}.
         """
+        from api_app.chatbot_manager.serializers import JobToolSerializer
         from api_app.models import Job
 
         limit = min(int(limit), 50)
-        qs = Job.objects.select_related("analyzable").filter(user=user)
+        qs = (
+            Job.objects.select_related("analyzable")
+            .prefetch_related("analyzers_to_execute")
+            .filter(user=user)
+        )
 
         if query:
             qs = qs.filter(
@@ -39,24 +44,6 @@ def make_search_jobs_tool(user):
 
         qs = qs.order_by("-received_request_time")[:limit]
 
-        results = []
-        for job in qs:
-            results.append(
-                {
-                    "id": job.pk,
-                    "observable_name": job.analyzable.name,
-                    "observable_classification": job.analyzable.classification,
-                    "md5": job.analyzable.md5,
-                    "status": job.status,
-                    "tlp": job.tlp,
-                    "received_request_time": str(job.received_request_time),
-                    "finished_analysis_time": str(job.finished_analysis_time)
-                    if job.finished_analysis_time
-                    else None,
-                    "analyzers_to_execute": list(job.analyzers_to_execute.values_list("name", flat=True)),
-                }
-            )
-
-        return json.dumps({"errors": [], "jobs": results}, indent=2)
+        return json.dumps({"errors": [], "jobs": JobToolSerializer(qs, many=True).data}, indent=2)
 
     return search_jobs
