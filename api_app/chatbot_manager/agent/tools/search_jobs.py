@@ -8,6 +8,10 @@ from langchain_core.tools import tool
 
 
 def make_search_jobs_tool(user):
+    # The tool is built per-request and closes over `user`: every query is hard-scoped
+    # to that user's jobs, so multi-tenancy is enforced here and the LLM can never widen
+    # it. LangChain feeds a tool's return value back to the model as the ReAct
+    # "Observation" step, so it must be a string; we return a JSON-serialized envelope.
     @tool("search_jobs")
     def search_jobs(query: str = "", status: str = "", limit: int = 10) -> str:
         """Search IntelOwl jobs by observable name, MD5, or status.
@@ -17,6 +21,9 @@ def make_search_jobs_tool(user):
             status: Filter by job status. Valid values: pending, running,
                     reported_without_fails, reported_with_fails, failed, killed.
             limit: Maximum number of results to return (default 10, max 50).
+
+        Returns:
+            JSON string with shape {"errors": [...], "jobs": [...]}.
         """
         from api_app.models import Job
 
@@ -50,8 +57,6 @@ def make_search_jobs_tool(user):
                 }
             )
 
-        if not results:
-            return "No jobs found matching the given criteria."
-        return json.dumps(results, indent=2)
+        return json.dumps({"errors": [], "jobs": results}, indent=2)
 
     return search_jobs

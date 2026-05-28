@@ -35,10 +35,21 @@ Previous conversation:
 Question: {input}
 {agent_scratchpad}"""
 
+# The prompt drives the ReAct loop. `create_react_agent` fills in the placeholders:
+# `{tools}`/`{tool_names}` are rendered from the tool list, and `{agent_scratchpad}` is
+# where the model's own Thought/Action/Observation steps are accumulated across iterations.
 REACT_PROMPT = PromptTemplate.from_template(_SYSTEM_PROMPT)
 
 
 def build_agent_executor(user) -> AgentExecutor:
+    """Build a ReAct agent executor scoped to `user`.
+
+    `ChatOllama` is the local LLM; `create_react_agent` wires the model + tools + prompt
+    into a reasoning loop (Thought → Action → Observation → ...); `AgentExecutor` runs
+    that loop until a Final Answer. `handle_parsing_errors=True` makes the executor feed
+    a malformed model output back as an Observation instead of raising, which keeps small
+    local models from crashing the turn on a formatting slip.
+    """
     llm = ChatOllama(
         model=settings.OLLAMA_MODEL,
         base_url=settings.OLLAMA_BASE_URL,

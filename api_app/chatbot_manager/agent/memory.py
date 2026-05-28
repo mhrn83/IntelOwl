@@ -6,13 +6,20 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 
 class DjangoChatMessageHistory(BaseChatMessageHistory):
-    """LangChain chat history backed by Django ChatMessage model."""
+    """LangChain chat history backed by the Django ChatMessage model.
+
+    Implements the BaseChatMessageHistory contract so a ChatSession's messages can be
+    used as an agent's conversation memory: `messages` reads, `add_message` writes
+    (via the inherited add_user_message/add_ai_message helpers), `clear` resets.
+    """
 
     def __init__(self, session):
+        """Bind this history to a single ChatSession (all reads/writes scope to it)."""
         self.session = session
 
     @property
     def messages(self) -> list[BaseMessage]:
+        """Return the session's messages, oldest first, as LangChain message objects."""
         from api_app.chatbot_manager.models import ChatMessage
 
         result = []
@@ -24,12 +31,14 @@ class DjangoChatMessageHistory(BaseChatMessageHistory):
         return result
 
     def add_message(self, message: BaseMessage) -> None:
+        """Persist one message, mapping its LangChain type to the ChatMessage role."""
         from api_app.chatbot_manager.models import ChatMessage
 
         role = ChatMessage.Role.USER if isinstance(message, HumanMessage) else ChatMessage.Role.ASSISTANT
         ChatMessage.objects.create(session=self.session, role=role, content=message.content)
 
     def clear(self) -> None:
+        """Delete every message in the session (resets the conversation)."""
         from api_app.chatbot_manager.models import ChatMessage
 
         ChatMessage.objects.filter(session=self.session).delete()

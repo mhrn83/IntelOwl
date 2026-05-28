@@ -2,10 +2,12 @@
 # See the file 'LICENSE' for copying permission.
 
 import json
+from uuid import uuid4
 
 from django.test import TestCase
 
 from api_app.analyzables_manager.models import Analyzable
+from api_app.analyzers_manager.models import AnalyzerConfig, AnalyzerReport
 from api_app.chatbot_manager.agent.tools import build_tools
 from api_app.choices import Classification
 from api_app.models import Job
@@ -41,38 +43,71 @@ class SearchJobsToolTestCase(TestCase):
     def test_search_jobs_returns_matching(self):
         result = self.search_jobs.invoke({"query": "malware.example.com"})
         data = json.loads(result)
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]["id"], self.job.pk)
+        self.assertEqual(data["errors"], [])
+        self.assertEqual(len(data["jobs"]), 1)
+        self.assertEqual(data["jobs"][0]["id"], self.job.pk)
 
     def test_search_jobs_respects_user_isolation(self):
         other_tools = build_tools(user=self.other_user)
         search = {t.name: t for t in other_tools}["search_jobs"]
         result = search.invoke({"query": "malware.example.com"})
         data = json.loads(result)
-        ids = [d["id"] for d in data]
+        ids = [d["id"] for d in data["jobs"]]
         self.assertIn(self.other_job.pk, ids)
         self.assertNotIn(self.job.pk, ids)
 
     def test_search_jobs_no_results(self):
         result = self.search_jobs.invoke({"query": "nonexistent999"})
-        self.assertIn("No jobs found", result)
+        data = json.loads(result)
+        self.assertEqual(data["errors"], [])
+        self.assertEqual(data["jobs"], [])
 
     def test_get_job_details_returns_data(self):
         result = self.get_job_details.invoke({"job_id": self.job.pk})
         data = json.loads(result)
-        self.assertEqual(data["id"], self.job.pk)
-        self.assertIn("observable_name", data)
-        self.assertIn("status", data)
+        self.assertEqual(data["errors"], [])
+        self.assertEqual(data["job"]["id"], self.job.pk)
+        self.assertIn("observable_name", data["job"])
+        self.assertIn("status", data["job"])
 
     def test_get_job_details_forbidden_other_user(self):
         result = self.get_job_details.invoke({"job_id": self.other_job.pk})
-        self.assertIn("not found or not accessible", result)
+        data = json.loads(result)
+        self.assertIsNone(data["job"])
+        self.assertTrue(data["errors"])
+        self.assertIn("not found or not accessible", data["errors"][0])
 
     def test_summarize_job_formats_output(self):
         result = self.summarize_job.invoke({"job_id": self.job.pk})
-        self.assertIn(f"Job #{self.job.pk}", result)
-        self.assertIn("malware.example.com", result)
-        self.assertIn("Status", result)
+        data = json.loads(result)
+        self.assertEqual(data["errors"], [])
+        self.assertIn(f"Job #{self.job.pk}", data["summary"])
+        self.assertIn("malware.example.com", data["summary"])
+        self.assertIn("Status", data["summary"])
+
+    def test_summarize_job_failed_reports_use_report_status(self):
+        # Regression: analyzer report status uses ReportStatus (uppercase). Only the
+        # non-SUCCESS report must show up under "Failed".
+        config_ok, config_ko = list(AnalyzerConfig.objects.all()[:2])
+        AnalyzerReport.objects.create(
+            report={},
+            job=self.job,
+            config=config_ok,
+            status=AnalyzerReport.STATUSES.SUCCESS.value,
+            task_id=str(uuid4()),
+            parameters={},
+        )
+        AnalyzerReport.objects.create(
+            report={},
+            job=self.job,
+            config=config_ko,
+            status=AnalyzerReport.STATUSES.FAILED.value,
+            task_id=str(uuid4()),
+            parameters={},
+        )
+        summary = json.loads(self.summarize_job.invoke({"job_id": self.job.pk}))["summary"]
+        self.assertIn(config_ko.name, summary)
+        self.assertNotIn(config_ok.name, summary)
 
     def tearDown(self):
         Job.objects.filter(user__in=[self.user, self.other_user]).delete()

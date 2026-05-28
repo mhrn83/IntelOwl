@@ -1,16 +1,26 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
+import json
+
 from langchain_core.tools import tool
+
+from api_app.choices import ReportStatus
 
 
 def make_summarize_job_tool(user):
+    # Built per-request and closed over `user`, so the lookup is hard-scoped to that
+    # user's jobs (multi-tenancy enforced here). The payload is human-readable prose
+    # (meant to be relayed to the user) wrapped in the same envelope as the other tools.
     @tool("summarize_job")
     def summarize_job(job_id: int) -> str:
         """Return a concise human-readable summary of an IntelOwl job.
 
         Args:
             job_id: The numeric ID of the job to summarize.
+
+        Returns:
+            JSON string with shape {"errors": [...], "summary": "..." | null}.
         """
         from api_app.models import Job
 
@@ -21,13 +31,15 @@ def make_summarize_job_tool(user):
                 .get(pk=job_id, user=user)
             )
         except Job.DoesNotExist:
-            return f"Job with ID {job_id} not found or not accessible."
+            return json.dumps(
+                {"errors": [f"Job with ID {job_id} not found or not accessible."], "summary": None}
+            )
 
         analyzers = list(job.analyzers_to_execute.values_list("name", flat=True))
+        # `analyzer_reports.*.status` uses ReportStatus (uppercase), distinct from the
+        # job-level Status enum: a report that did not succeed is considered failed here.
         failed_reports = [
-            r.config.name
-            for r in job.analyzer_reports.all()
-            if r.status not in ("success", "reported_without_fails")
+            r.config.name for r in job.analyzer_reports.all() if r.status != ReportStatus.SUCCESS.value
         ]
 
         lines = [
@@ -45,6 +57,6 @@ def make_summarize_job_tool(user):
         if failed_reports:
             lines.append(f"  Failed     : {', '.join(failed_reports)}")
 
-        return "\n".join(lines)
+        return json.dumps({"errors": [], "summary": "\n".join(lines)})
 
     return summarize_job

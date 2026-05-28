@@ -31,6 +31,14 @@ class ChatSessionViewSet(ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="message")
     def message(self, request):
+        """Run one synchronous chat turn against the agent.
+
+        Flow: validate the request, resolve the target session (or create a new one),
+        load the prior turns from the DB as the agent's conversation history, invoke the
+        ReAct agent with the user's message, then persist both the user message and the
+        assistant reply and return the reply. Persistence goes through
+        DjangoChatMessageHistory so the ORM stays the single source of truth for history.
+        """
         req = MessageRequestSerializer(data=request.data)
         req.is_valid(raise_exception=True)
 
@@ -49,15 +57,10 @@ class ChatSessionViewSet(ModelViewSet):
         result = executor.invoke({"input": user_message, "chat_history": chat_history_text})
         response_text = result.get("output", "")
 
-        ChatMessage.objects.create(
-            session=session,
-            role=ChatMessage.Role.USER,
-            content=user_message,
-        )
-        ai_msg = ChatMessage.objects.create(
-            session=session,
-            role=ChatMessage.Role.ASSISTANT,
-            content=response_text,
+        history.add_user_message(user_message)
+        history.add_ai_message(response_text)
+        ai_msg = ChatMessage.objects.filter(session=session, role=ChatMessage.Role.ASSISTANT).latest(
+            "timestamp"
         )
 
         return Response(
