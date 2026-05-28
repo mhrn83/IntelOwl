@@ -3,10 +3,10 @@
 
 import json
 
+from langchain_core.tools import tool
+
 
 def make_get_job_details_tool(user):
-    from langchain_core.tools import tool
-
     @tool("get_job_details")
     def get_job_details(job_id: int) -> str:
         """Get full details of an IntelOwl job by its numeric ID.
@@ -19,7 +19,7 @@ def make_get_job_details_tool(user):
         try:
             job = (
                 Job.objects.select_related("analyzable")
-                .prefetch_related("analyzer_reports", "analyzers_to_execute", "tags")
+                .prefetch_related("analyzer_reports__config", "analyzers_to_execute", "tags")
                 .get(pk=job_id, user=user)
             )
         except Job.DoesNotExist:

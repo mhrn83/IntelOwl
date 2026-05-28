@@ -1,10 +1,10 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
+from langchain_core.tools import tool
+
 
 def make_summarize_job_tool(user):
-    from langchain_core.tools import tool
-
     @tool("summarize_job")
     def summarize_job(job_id: int) -> str:
         """Return a concise human-readable summary of an IntelOwl job.
@@ -17,7 +17,7 @@ def make_summarize_job_tool(user):
         try:
             job = (
                 Job.objects.select_related("analyzable")
-                .prefetch_related("analyzer_reports", "analyzers_to_execute")
+                .prefetch_related("analyzer_reports__config", "analyzers_to_execute")
                 .get(pk=job_id, user=user)
             )
         except Job.DoesNotExist:
