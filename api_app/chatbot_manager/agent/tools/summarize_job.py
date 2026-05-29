@@ -1,8 +1,6 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
-import json
-
 from langchain_core.tools import tool
 
 from api_app.choices import ReportStatus
@@ -22,6 +20,7 @@ def make_summarize_job_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "summary": "..." | null}.
         """
+        from api_app.chatbot_manager.serializers import SummarizeJobResultSerializer
         from api_app.models import Job
 
         try:
@@ -31,9 +30,9 @@ def make_summarize_job_tool(user):
                 .get(pk=job_id, user=user)
             )
         except Job.DoesNotExist:
-            return json.dumps(
+            return SummarizeJobResultSerializer(
                 {"errors": [f"Job with ID {job_id} not found or not accessible."], "summary": None}
-            )
+            ).to_json()
 
         analyzers = list(job.analyzers_to_execute.values_list("name", flat=True))
         # `analyzerreports.*.status` uses ReportStatus (uppercase), distinct from the
@@ -57,6 +56,6 @@ def make_summarize_job_tool(user):
         if failed_reports:
             lines.append(f"  Failed     : {', '.join(failed_reports)}")
 
-        return json.dumps({"errors": [], "summary": "\n".join(lines)})
+        return SummarizeJobResultSerializer({"errors": [], "summary": "\n".join(lines)}).to_json()
 
     return summarize_job

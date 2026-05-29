@@ -1,8 +1,6 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
-import json
-
 from langchain_core.tools import tool
 
 
@@ -20,7 +18,7 @@ def make_get_job_details_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "job": {...} | null}.
         """
-        from api_app.chatbot_manager.serializers import JobDetailToolSerializer
+        from api_app.chatbot_manager.serializers import JobDetailResultSerializer
         from api_app.models import Job
 
         try:
@@ -30,8 +28,10 @@ def make_get_job_details_tool(user):
                 .get(pk=job_id, user=user)
             )
         except Job.DoesNotExist:
-            return json.dumps({"errors": [f"Job with ID {job_id} not found or not accessible."], "job": None})
+            return JobDetailResultSerializer(
+                {"errors": [f"Job with ID {job_id} not found or not accessible."], "job": None}
+            ).to_json()
 
-        return json.dumps({"errors": [], "job": JobDetailToolSerializer(job).data}, indent=2)
+        return JobDetailResultSerializer({"errors": [], "job": job}).to_json()
 
     return get_job_details

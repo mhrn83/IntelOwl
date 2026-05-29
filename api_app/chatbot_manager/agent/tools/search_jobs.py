@@ -1,8 +1,6 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
-import json
-
 from django.db import models
 from langchain_core.tools import tool
 
@@ -25,7 +23,7 @@ def make_search_jobs_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "jobs": [...]}.
         """
-        from api_app.chatbot_manager.serializers import JobToolSerializer
+        from api_app.chatbot_manager.serializers import SearchJobsResultSerializer
         from api_app.models import Job
 
         limit = min(int(limit), 50)
@@ -44,6 +42,6 @@ def make_search_jobs_tool(user):
 
         qs = qs.order_by("-received_request_time")[:limit]
 
-        return json.dumps({"errors": [], "jobs": JobToolSerializer(qs, many=True).data}, indent=2)
+        return SearchJobsResultSerializer({"errors": [], "jobs": qs}).to_json()
 
     return search_jobs

@@ -1,6 +1,8 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
+import json
+
 from rest_framework import serializers
 
 from api_app.analyzers_manager.models import AnalyzerReport
@@ -64,6 +66,31 @@ class JobDetailToolSerializer(JobToolSerializer):
             "warnings",
             "analyzer_reports",
         ]
+
+
+class ToolResultSerializer(serializers.Serializer):
+    """Base envelope for agent-tool output: an always-present `errors` list plus a payload.
+
+    A LangChain tool must return a string (it is fed back to the model as the ReAct
+    Observation), so `to_json()` renders the serialized envelope to a JSON string.
+    """
+
+    errors = serializers.ListField(child=serializers.CharField(), default=list)
+
+    def to_json(self) -> str:
+        return json.dumps(self.data, indent=2)
+
+
+class SearchJobsResultSerializer(ToolResultSerializer):
+    jobs = JobToolSerializer(many=True)
+
+
+class JobDetailResultSerializer(ToolResultSerializer):
+    job = JobDetailToolSerializer(allow_null=True)
+
+
+class SummarizeJobResultSerializer(ToolResultSerializer):
+    summary = serializers.CharField(allow_null=True)
 
 
 class ChatSessionSerializer(serializers.ModelSerializer):
