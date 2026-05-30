@@ -5,6 +5,9 @@ from collections import Counter
 
 from langchain_core.tools import tool
 
+from api_app.chatbot_manager.serializers import SummarizeInvestigationResultSerializer
+from api_app.investigations_manager.models import Investigation
+
 
 def make_summarize_investigation_tool(user):
     # Built per-request and closed over `user`. Scoped with `visible_for_user` (owned +
@@ -23,9 +26,6 @@ def make_summarize_investigation_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "summary": "..." | null}.
         """
-        from api_app.chatbot_manager.serializers import SummarizeInvestigationResultSerializer
-        from api_app.investigations_manager.models import Investigation
-
         try:
             investigation = Investigation.objects.visible_for_user(user).get(pk=investigation_id)
         except Investigation.DoesNotExist:

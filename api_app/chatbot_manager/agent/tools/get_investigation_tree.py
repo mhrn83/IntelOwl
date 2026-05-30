@@ -1,7 +1,13 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
+from dataclasses import asdict, dataclass, field
+from typing import List, Optional
+
 from langchain_core.tools import tool
+
+from api_app.chatbot_manager.serializers import InvestigationTreeResultSerializer
+from api_app.investigations_manager.models import Investigation
 
 # Bounds for the LLM-facing tree: keep the serialized payload small enough not to blow up
 # the prompt regardless of how large an investigation is.
@@ -9,18 +15,33 @@ _MAX_DEPTH = 10
 _MAX_NODES = 200
 
 
-def _compact_node(job) -> dict:
-    """Minimal LLM-facing view of a job node: id, observable, status, children."""
-    return {
-        "id": job.pk,
-        "observable": getattr(job.analyzable, "name", None),
-        "status": job.status,
-        "children": [],
-    }
+@dataclass
+class _JobNode:
+    """One job in the LLM-facing tree: id, observable, status and its children."""
+
+    id: int
+    observable: Optional[str]
+    status: str
+    children: List["_JobNode"] = field(default_factory=list)
 
 
-def _build_tree(investigation) -> dict:
-    """Assemble a compact nested tree for an investigation, avoiding the treebeard N+1.
+@dataclass
+class _InvestigationTree:
+    """Compact job tree for an investigation. `truncated` is True when a cap was hit."""
+
+    id: int
+    name: str
+    status: str
+    jobs: List[_JobNode] = field(default_factory=list)
+    truncated: bool = False
+
+
+def _node(job) -> _JobNode:
+    return _JobNode(id=job.pk, observable=getattr(job.analyzable, "name", None), status=job.status)
+
+
+def _build_tree(investigation) -> _InvestigationTree:
+    """Assemble a compact job tree for an investigation, avoiding the treebeard N+1.
 
     A Job is a treebeard ``MP_Node``; walking it with ``get_children()`` recursively would
     fire one query per node. Instead we fetch each root's whole subtree with a single
@@ -28,24 +49,22 @@ def _build_tree(investigation) -> dict:
     materialized ``path`` (a child's parent path is its own path minus the last step), so
     there are no per-node queries. Depth and node count are capped to bound the payload.
     """
-    payload = {
-        "id": investigation.pk,
-        "name": investigation.name,
-        "status": investigation.status,
-        "jobs": [],
-    }
+    tree = _InvestigationTree(
+        id=investigation.pk,
+        name=investigation.name,
+        status=investigation.status,
+    )
     remaining = _MAX_NODES
-    truncated = False
 
     # `investigation.jobs` are the root jobs; their descendants live only in the tree.
     for root in investigation.jobs.select_related("analyzable"):
         if remaining <= 0:
-            truncated = True
+            tree.truncated = True
             break
-        root_node = _compact_node(root)
-        payload["jobs"].append(root_node)
+        root_node = _node(root)
+        tree.jobs.append(root_node)
         remaining -= 1
-        # Map path -> node for every kept node, to link children to parents in O(1).
+        # Index path -> node for every kept node, to link children to parents in O(1).
         by_path = {root.path: root_node}
 
         # One query for the whole subtree, in path order (treebeard pre-order DFS), so a
@@ -58,16 +77,14 @@ def _build_tree(investigation) -> dict:
                 # Ancestor was capped out (depth/budget); skip to avoid orphaning.
                 continue
             if remaining <= 0:
-                truncated = True
+                tree.truncated = True
                 break
-            node = _compact_node(job)
+            node = _node(job)
             by_path[job.path] = node
-            parent["children"].append(node)
+            parent.children.append(node)
             remaining -= 1
 
-    if truncated:
-        payload["truncated"] = True
-    return payload
+    return tree
 
 
 def make_get_investigation_tree_tool(user):
@@ -81,7 +98,7 @@ def make_get_investigation_tree_tool(user):
 
         Returns the investigation with its jobs as a nested tree (each node: id,
         observable, status, children). Depth and node count are capped for large trees
-        (a `"truncated": true` flag is added when the cap is hit).
+        (the `truncated` flag is set to true when the cap is hit).
 
         Args:
             investigation_id: The numeric ID of the investigation.
@@ -89,9 +106,6 @@ def make_get_investigation_tree_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "investigation": {...} | null}.
         """
-        from api_app.chatbot_manager.serializers import InvestigationTreeResultSerializer
-        from api_app.investigations_manager.models import Investigation
-
         try:
             investigation = Investigation.objects.visible_for_user(user).get(pk=investigation_id)
         except Investigation.DoesNotExist:
@@ -103,7 +117,7 @@ def make_get_investigation_tree_tool(user):
             ).to_json()
 
         return InvestigationTreeResultSerializer(
-            {"errors": [], "investigation": _build_tree(investigation)}
+            {"errors": [], "investigation": asdict(_build_tree(investigation))}
         ).to_json()
 
     return get_investigation_tree

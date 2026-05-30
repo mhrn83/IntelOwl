@@ -3,6 +3,14 @@
 
 from langchain_core.tools import tool
 
+from api_app.chatbot_manager.serializers import InvestigationsResultSerializer
+from api_app.investigations_manager.choices import InvestigationStatusChoices
+from api_app.investigations_manager.models import Investigation
+
+# Hard cap on the number of results returned to the LLM (mirrors the job tools), so a
+# single call can't pull an unbounded list into the prompt.
+_MAX_RESULTS = 50
+
 
 def make_list_investigations_tool(user):
     # Built per-request and closed over `user`: the queryset is scoped with
@@ -24,10 +32,6 @@ def make_list_investigations_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "investigations": [...]}.
         """
-        from api_app.chatbot_manager.serializers import InvestigationsResultSerializer
-        from api_app.investigations_manager.choices import InvestigationStatusChoices
-        from api_app.investigations_manager.models import Investigation
-
         errors = []
         qs = Investigation.objects.visible_for_user(user)
 
@@ -43,7 +47,7 @@ def make_list_investigations_tool(user):
                 valid = ", ".join(InvestigationStatusChoices.values)
                 errors.append(f"Unknown status '{status}'; valid values are: {valid}.")
 
-        limit = min(int(limit), 50)
+        limit = min(int(limit), _MAX_RESULTS)
         qs = qs.order_by("-start_time")[:limit]
 
         return InvestigationsResultSerializer({"errors": errors, "investigations": qs}).to_json()
