@@ -1,6 +1,7 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
+from .get_data_model import make_get_data_model_tool
 from .get_investigation_tree import make_get_investigation_tree_tool
 from .get_job_details import make_get_job_details_tool
 from .list_investigations import make_list_investigations_tool
@@ -26,4 +27,5 @@ def build_tools(user) -> list:
         make_list_investigations_tool(user),
         make_get_investigation_tree_tool(user),
         make_summarize_investigation_tool(user),
+        make_get_data_model_tool(user),
     ]

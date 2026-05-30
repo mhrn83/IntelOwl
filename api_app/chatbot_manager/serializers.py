@@ -123,6 +123,13 @@ class SummarizeInvestigationResultSerializer(ToolResultSerializer):
     summary = serializers.CharField(allow_null=True)
 
 
+class DataModelResultSerializer(ToolResultSerializer):
+    # `data_model` is already produced by the model's own DRF serializer
+    # (`BaseDataModel.serialize()`, polymorphic across Domain/IP/File), so the envelope
+    # just carries that dict (empty `{}` when the job has no data model).
+    data_model = serializers.DictField(read_only=True)
+
+
 class ChatSessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatSession
