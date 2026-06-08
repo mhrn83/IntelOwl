@@ -5,7 +5,7 @@ from collections import Counter
 
 from langchain_core.tools import tool
 
-from api_app.chatbot_manager.serializers import SummarizeInvestigationResultSerializer
+from api_app.chatbot_manager.serializers.investigation import SummarizeInvestigationResultSerializer
 from api_app.investigations_manager.models import Investigation
 
 

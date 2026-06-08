@@ -11,7 +11,7 @@ from rest_framework.viewsets import ModelViewSet
 from .agent.agent import build_agent_executor, format_history
 from .agent.memory import DjangoChatMessageHistory
 from .models import ChatMessage, ChatSession
-from .serializers import (
+from .serializers.chat import (
     ChatMessageSerializer,
     ChatSessionSerializer,
     MessageRequestSerializer,

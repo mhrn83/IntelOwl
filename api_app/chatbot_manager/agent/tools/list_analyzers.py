@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 from api_app.analyzers_manager.constants import TypeChoices
 from api_app.analyzers_manager.models import AnalyzerConfig
 from api_app.chatbot_manager.agent.tools._common import clamp_limit
-from api_app.chatbot_manager.serializers import ListAnalyzersResultSerializer
+from api_app.chatbot_manager.serializers.analyzer import ListAnalyzersResultSerializer
 from api_app.choices import Classification
 
 

@@ -3,7 +3,7 @@
 
 from langchain_core.tools import tool
 
-from api_app.chatbot_manager.serializers import DataModelResultSerializer
+from api_app.chatbot_manager.serializers.data_model import DataModelResultSerializer
 from api_app.models import Job
 
 

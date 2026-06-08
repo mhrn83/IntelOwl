@@ -4,7 +4,7 @@
 from langchain_core.tools import tool
 
 from api_app.chatbot_manager.agent.tools._common import clamp_limit
-from api_app.chatbot_manager.serializers import RecommendPlaybookResultSerializer
+from api_app.chatbot_manager.serializers.playbook import RecommendPlaybookResultSerializer
 from api_app.choices import Classification
 from api_app.playbooks_manager.models import PlaybookConfig
 

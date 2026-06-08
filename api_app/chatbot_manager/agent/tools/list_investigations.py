@@ -3,7 +3,7 @@
 
 from langchain_core.tools import tool
 
-from api_app.chatbot_manager.serializers import InvestigationsResultSerializer
+from api_app.chatbot_manager.serializers.investigation import InvestigationsResultSerializer
 from api_app.investigations_manager.choices import InvestigationStatusChoices
 from api_app.investigations_manager.models import Investigation
 

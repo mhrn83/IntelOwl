@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from langchain_core.tools import tool
 
-from api_app.chatbot_manager.serializers import InvestigationTreeResultSerializer
+from api_app.chatbot_manager.serializers.investigation import InvestigationTreeResultSerializer
 from api_app.investigations_manager.models import Investigation
 
 # Bounds for the LLM-facing tree: keep the serialized payload small enough not to blow up

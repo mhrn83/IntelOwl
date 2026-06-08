@@ -20,7 +20,7 @@ def make_summarize_job_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "summary": "..." | null}.
         """
-        from api_app.chatbot_manager.serializers import SummarizeJobResultSerializer
+        from api_app.chatbot_manager.serializers.job import SummarizeJobResultSerializer
         from api_app.models import Job
 
         try:

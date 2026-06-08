@@ -23,7 +23,7 @@ def make_search_jobs_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "jobs": [...]}.
         """
-        from api_app.chatbot_manager.serializers import SearchJobsResultSerializer
+        from api_app.chatbot_manager.serializers.job import SearchJobsResultSerializer
         from api_app.models import Job
 
         limit = min(int(limit), 50)

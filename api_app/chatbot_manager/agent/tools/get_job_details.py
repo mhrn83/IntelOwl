@@ -18,7 +18,7 @@ def make_get_job_details_tool(user):
         Returns:
             JSON string with shape {"errors": [...], "job": {...} | null}.
         """
-        from api_app.chatbot_manager.serializers import JobDetailResultSerializer
+        from api_app.chatbot_manager.serializers.job import JobDetailResultSerializer
         from api_app.models import Job
 
         try:
