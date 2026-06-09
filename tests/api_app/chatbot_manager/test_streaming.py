@@ -45,11 +45,14 @@ class ChatStreamingCallbackHandlerTestCase(SimpleTestCase):
         ]:
             handler.on_llm_new_token(token)
 
-        messages = self._messages(layer)
-        self.assertEqual([m[0] for m in messages], [events.chat_group_for_user(USER_ID)] * 2)
-        self.assertEqual([m[1]["type"] for m in messages], [events.EVENT_TOKEN, events.EVENT_TOKEN])
-        self.assertEqual([m[1]["payload"]["content"] for m in messages], [" Hello", " world"])
-        self.assertEqual(messages[0][1]["payload"]["session_id"], SESSION_ID)
+        group = events.chat_group_for_user(USER_ID)
+        self.assertEqual(
+            self._messages(layer),
+            [
+                (group, events.TokenEvent(SESSION_ID, " Hello").as_channel_message()),
+                (group, events.TokenEvent(SESSION_ID, " world").as_channel_message()),
+            ],
+        )
 
     def test_marker_split_across_tokens_is_still_detected(self):
         # Ollama/Mistral may tokenize "Final Answer:" arbitrarily; the buffer substring match
@@ -91,11 +94,13 @@ class ChatStreamingCallbackHandlerTestCase(SimpleTestCase):
 
         handler.on_agent_action(action)
 
-        (group, message) = self._messages(layer)[0]
-        self.assertEqual(group, events.chat_group_for_user(USER_ID))
-        self.assertEqual(message["type"], events.EVENT_STATUS)
-        self.assertEqual(message["payload"]["tool"], "search_jobs")
-        self.assertEqual(message["payload"]["session_id"], SESSION_ID)
+        self.assertEqual(
+            self._messages(layer)[0],
+            (
+                events.chat_group_for_user(USER_ID),
+                events.StatusEvent(SESSION_ID, "search_jobs").as_channel_message(),
+            ),
+        )
 
     def test_agent_action_for_unregistered_tool_is_suppressed(self):
         # With a real tool registry, LangChain's "_Exception" parse-error pseudo-tool (and any

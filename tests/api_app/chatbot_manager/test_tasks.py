@@ -101,7 +101,8 @@ class ProcessChatMessageTestCase(TestCase):
 
     @staticmethod
     def _event_types(layer):
-        return [call.args[1]["type"] for call in layer.group_send.call_args_list]
+        # client-facing payload type of each group_send (start/status/token/end/error)
+        return [call.args[1]["payload"]["type"] for call in layer.group_send.call_args_list]
 
     @patch("api_app.chatbot_manager.tasks.get_channel_layer")
     @patch("api_app.chatbot_manager.agent.agent.build_agent_executor")
@@ -122,7 +123,10 @@ class ProcessChatMessageTestCase(TestCase):
             messages,
             [(ChatMessage.Role.USER, "hello"), (ChatMessage.Role.ASSISTANT, "Hi there")],
         )
-        self.assertEqual(self._event_types(layer), [events.EVENT_START, events.EVENT_END])
+        self.assertEqual(
+            self._event_types(layer),
+            [events.ChatEventType.START.value, events.ChatEventType.END.value],
+        )
 
         end_payload = layer.group_send.call_args_list[-1].args[1]["payload"]
         assistant = ChatMessage.objects.get(session=self.session, role=ChatMessage.Role.ASSISTANT)
@@ -145,9 +149,12 @@ class ProcessChatMessageTestCase(TestCase):
 
         # failed turn is dropped: neither the user nor the assistant message is stored
         self.assertFalse(ChatMessage.objects.filter(session=self.session).exists())
-        self.assertEqual(self._event_types(layer), [events.EVENT_START, events.EVENT_ERROR])
+        self.assertEqual(
+            self._event_types(layer),
+            [events.ChatEventType.START.value, events.ChatEventType.ERROR.value],
+        )
         error_payload = layer.group_send.call_args_list[-1].args[1]["payload"]
-        self.assertEqual(error_payload["detail"], events.DETAIL_UNAVAILABLE)
+        self.assertEqual(error_payload["detail"], events.ChatErrorDetail.UNAVAILABLE.value)
 
     @patch("api_app.chatbot_manager.tasks.get_channel_layer")
     @patch("api_app.chatbot_manager.agent.agent.build_agent_executor")
@@ -160,6 +167,6 @@ class ProcessChatMessageTestCase(TestCase):
 
         mock_build.assert_not_called()
         self.assertFalse(ChatMessage.objects.filter(session=foreign_session).exists())
-        self.assertEqual(self._event_types(layer), [events.EVENT_ERROR])
+        self.assertEqual(self._event_types(layer), [events.ChatEventType.ERROR.value])
         error_payload = layer.group_send.call_args_list[0].args[1]["payload"]
-        self.assertEqual(error_payload["detail"], events.DETAIL_SESSION_NOT_FOUND)
+        self.assertEqual(error_payload["detail"], events.ChatErrorDetail.SESSION_NOT_FOUND.value)

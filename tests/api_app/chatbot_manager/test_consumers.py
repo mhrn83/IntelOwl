@@ -68,7 +68,7 @@ class ChatConsumerTestCase(TestCase):
         consumer.receive_json({"message": "hello"})
 
         session = ChatSession.objects.get(user=self.user)
-        consumer.send_json.assert_called_once_with(events.ack_payload(session.id))
+        consumer.send_json.assert_called_once_with(events.AckEvent(session.id).to_client())
         mock_task.delay.assert_called_once_with(session.id, "hello", self.user.id)
 
     @patch("api_app.chatbot_manager.consumers.process_chat_message")
@@ -79,7 +79,7 @@ class ChatConsumerTestCase(TestCase):
 
         # no new session is created when a valid owned id is supplied
         self.assertEqual(ChatSession.objects.filter(user=self.user).count(), 1)
-        consumer.send_json.assert_called_once_with(events.ack_payload(session.id))
+        consumer.send_json.assert_called_once_with(events.AckEvent(session.id).to_client())
         mock_task.delay.assert_called_once_with(session.id, "again", self.user.id)
 
     @patch("api_app.chatbot_manager.consumers.process_chat_message")
@@ -87,7 +87,9 @@ class ChatConsumerTestCase(TestCase):
         consumer = _make_consumer(self.user)
         consumer.receive_json({"message": "x" * (events.MAX_INBOUND_MESSAGE_LEN + 1)})
 
-        consumer.send_json.assert_called_once_with(events.error_payload(None, events.DETAIL_INVALID_MESSAGE))
+        consumer.send_json.assert_called_once_with(
+            events.ErrorEvent(None, events.ChatErrorDetail.INVALID_MESSAGE.value).to_client()
+        )
         mock_task.delay.assert_not_called()
         # an invalid frame must not create a session
         self.assertFalse(ChatSession.objects.filter(user=self.user).exists())
@@ -101,7 +103,7 @@ class ChatConsumerTestCase(TestCase):
         consumer.receive_json({"message": "hi", "session_id": foreign_session.id})
 
         consumer.send_json.assert_called_once_with(
-            events.error_payload(foreign_session.id, events.DETAIL_SESSION_NOT_FOUND)
+            events.ErrorEvent(foreign_session.id, events.ChatErrorDetail.SESSION_NOT_FOUND.value).to_client()
         )
         mock_task.delay.assert_not_called()
 
@@ -110,7 +112,7 @@ class ChatConsumerRelayTestCase(SimpleTestCase):
     """Each group handler relays the producer's prebuilt payload verbatim to the client."""
 
     def test_handlers_forward_event_payload(self):
-        payload = events.token_payload(3, "hi")
+        payload = events.TokenEvent(3, "hi").to_client()
         for handler_name in ("chat_start", "chat_status", "chat_token", "chat_end", "chat_error"):
             consumer = ChatConsumer()
             consumer.send_json = MagicMock()

@@ -3,52 +3,52 @@
 
 """Wire protocol for the chat WebSocket.
 
-Single source of truth for everything that crosses the chat WebSocket so the producer
-(Celery worker / streaming callback) and the consumer never hand-build event dicts:
+Single source of truth for everything that crosses the chat WebSocket, so the producer (Celery
+worker / streaming callback) and the consumer never hand-build event dicts. One style throughout:
+a ``ChatEvent`` dataclass per event kind, each able to render
 
-- the Channels ``group_send`` routing types (``chat.token`` -> ``ChatConsumer.chat_token``);
-- the client-facing payload built by the typed ``*_payload`` helpers;
-- the ``OutboundEvent`` dataclass that pairs a routing type with its payload;
-- the per-user group name and the inbound limits.
+- ``to_client()`` — the JSON the browser receives (its ``type`` is a ``ChatEventType``), and
+- ``as_channel_message()`` — that payload wrapped for a Channels ``group_send``, whose ``type``
+  (``chat.token`` -> ``ChatConsumer.chat_token``) routes it to the matching consumer handler.
 
-A chat turn streams to a per-user group (``chat-<user_id>``) rather than a per-session group:
-the fixed URL ``ws/chat/?context_url=...`` carries no session id, the group key is the
-server-authenticated user id (so no cross-tenant subscription is possible), and every payload
-carries ``session_id`` so a client with several open sessions/tabs can demultiplex.
+A chat turn streams to a per-user group (``chat-<user_id>``) rather than a per-session group: the
+fixed URL ``ws/chat/?context_url=...`` carries no session id, the group key is the server-
+authenticated user id (so no cross-tenant subscription is possible), and every payload carries
+``session_id`` so a client with several open sessions/tabs can demultiplex.
 """
 
-from dataclasses import dataclass
-from typing import Optional
-
-# --- Channels group_send "type" -> ChatConsumer handler (dots become underscores) ---
-EVENT_START = "chat.start"
-EVENT_STATUS = "chat.status"
-EVENT_TOKEN = "chat.token"
-EVENT_END = "chat.end"
-EVENT_ERROR = "chat.error"
-
-# --- client-facing payload "type" labels (what the browser switches on) ---
-CLIENT_ACK = "ack"
-CLIENT_START = "start"
-CLIENT_STATUS = "status"
-CLIENT_TOKEN = "token"
-CLIENT_END = "end"
-CLIENT_ERROR = "error"
+from dataclasses import asdict, dataclass
+from enum import StrEnum
+from typing import ClassVar, Optional
 
 CHAT_GROUP_PREFIX = "chat-"
 
-# The ReAct prompt ends every turn with a "Final Answer:" line (see REACT_PROMPT). The
-# streaming callback streams only what follows this marker, hiding the Thought/Action scaffolding.
+# The ReAct prompt ends every turn with a "Final Answer:" line (see REACT_PROMPT). The streaming
+# callback streams only what follows this marker, hiding the Thought/Action scaffolding.
 ANSWER_MARKER = "Final Answer:"
 
 # Inbound guardrail: mirrors MessageRequestSerializer(message=CharField(max_length=4096)).
 MAX_INBOUND_MESSAGE_LEN = 4096
 
-# User-facing error details (kept generic on purpose: never leak internals to the client).
-DETAIL_SESSION_NOT_FOUND = "Chat session not found."
-DETAIL_INVALID_MESSAGE = "Invalid message payload."
-DETAIL_TIMEOUT = "The assistant took too long to respond. Please try again."
-DETAIL_UNAVAILABLE = "The assistant is currently unavailable. Please try again."
+
+class ChatEventType(StrEnum):
+    """The ``type`` discriminator of an outbound frame (what the browser switches on)."""
+
+    ACK = "ack"
+    START = "start"
+    STATUS = "status"
+    TOKEN = "token"
+    END = "end"
+    ERROR = "error"
+
+
+class ChatErrorDetail(StrEnum):
+    """User-facing error texts (kept generic on purpose: never leak internals to the client)."""
+
+    SESSION_NOT_FOUND = "Chat session not found."
+    INVALID_MESSAGE = "Invalid message payload."
+    TIMEOUT = "The assistant took too long to respond. Please try again."
+    UNAVAILABLE = "The assistant is currently unavailable. Please try again."
 
 
 def chat_group_for_user(user_id: int) -> str:
@@ -56,67 +56,64 @@ def chat_group_for_user(user_id: int) -> str:
     return f"{CHAT_GROUP_PREFIX}{user_id}"
 
 
-def _payload(client_type: str, **fields) -> dict:
-    return {"type": client_type, **fields}
+@dataclass(frozen=True)
+class ChatEvent:
+    """Base outbound chat event.
 
+    Subclasses only declare their extra fields and set ``type``. ``to_client()`` is the frame the
+    browser receives; ``as_channel_message()`` wraps it for a Channels ``group_send`` and is
+    relayed verbatim by ``ChatConsumer`` (``chat.<type>`` -> the same-named handler).
+    """
 
-# --- client-facing payload builders (also used for messages the consumer sends directly) ---
-def ack_payload(session_id: int) -> dict:
-    """Synchronous reply to an inbound frame, telling the client which session it landed on."""
-    return _payload(CLIENT_ACK, session_id=session_id)
+    # Channels routing prefix; "chat." + type -> "chat.token" -> ChatConsumer.chat_token.
+    _CHANNEL_TYPE_PREFIX: ClassVar[str] = "chat."
+    type: ClassVar[ChatEventType]
 
+    session_id: Optional[int]
 
-def start_payload(session_id: int) -> dict:
-    return _payload(CLIENT_START, session_id=session_id)
+    def to_client(self) -> dict:
+        return {"type": self.type.value, **asdict(self)}
 
+    @property
+    def channel_type(self) -> str:
+        return f"{self._CHANNEL_TYPE_PREFIX}{self.type.value}"
 
-def status_payload(session_id: int, tool: str) -> dict:
-    return _payload(CLIENT_STATUS, session_id=session_id, tool=tool)
-
-
-def token_payload(session_id: int, content: str) -> dict:
-    return _payload(CLIENT_TOKEN, session_id=session_id, content=content)
-
-
-def end_payload(session_id: int, message_id: int, content: str) -> dict:
-    return _payload(CLIENT_END, session_id=session_id, message_id=message_id, content=content)
-
-
-def error_payload(session_id: Optional[int], detail: str) -> dict:
-    return _payload(CLIENT_ERROR, session_id=session_id, detail=detail)
+    def as_channel_message(self) -> dict:
+        return {"type": self.channel_type, "payload": self.to_client()}
 
 
 @dataclass(frozen=True)
-class OutboundEvent:
-    """A chat event pushed worker -> channel layer -> consumer -> client.
+class AckEvent(ChatEvent):
+    """Synchronous reply to an inbound frame, telling the client which session it landed on."""
 
-    ``channel_type`` routes the ``group_send`` to the matching ``ChatConsumer`` handler;
-    ``payload`` is what that handler forwards verbatim to the browser via ``send_json``.
-    """
-
-    channel_type: str
-    payload: dict
-
-    def as_channel_message(self) -> dict:
-        return {"type": self.channel_type, "payload": self.payload}
+    type: ClassVar[ChatEventType] = ChatEventType.ACK
 
 
-# --- OutboundEvent builders (group-routed events emitted by the worker / callback) ---
-def start_event(session_id: int) -> OutboundEvent:
-    return OutboundEvent(EVENT_START, start_payload(session_id))
+@dataclass(frozen=True)
+class StartEvent(ChatEvent):
+    type: ClassVar[ChatEventType] = ChatEventType.START
 
 
-def status_event(session_id: int, tool: str) -> OutboundEvent:
-    return OutboundEvent(EVENT_STATUS, status_payload(session_id, tool))
+@dataclass(frozen=True)
+class StatusEvent(ChatEvent):
+    tool: str
+    type: ClassVar[ChatEventType] = ChatEventType.STATUS
 
 
-def token_event(session_id: int, content: str) -> OutboundEvent:
-    return OutboundEvent(EVENT_TOKEN, token_payload(session_id, content))
+@dataclass(frozen=True)
+class TokenEvent(ChatEvent):
+    content: str
+    type: ClassVar[ChatEventType] = ChatEventType.TOKEN
 
 
-def end_event(session_id: int, message_id: int, content: str) -> OutboundEvent:
-    return OutboundEvent(EVENT_END, end_payload(session_id, message_id, content))
+@dataclass(frozen=True)
+class EndEvent(ChatEvent):
+    message_id: int
+    content: str
+    type: ClassVar[ChatEventType] = ChatEventType.END
 
 
-def error_event(session_id: Optional[int], detail: str) -> OutboundEvent:
-    return OutboundEvent(EVENT_ERROR, error_payload(session_id, detail))
+@dataclass(frozen=True)
+class ErrorEvent(ChatEvent):
+    detail: str
+    type: ClassVar[ChatEventType] = ChatEventType.ERROR

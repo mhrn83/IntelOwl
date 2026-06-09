@@ -18,10 +18,10 @@ from langchain_core.callbacks.base import BaseCallbackHandler
 
 from api_app.chatbot_manager.events import (
     ANSWER_MARKER,
-    OutboundEvent,
+    ChatEvent,
+    StatusEvent,
+    TokenEvent,
     chat_group_for_user,
-    status_event,
-    token_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class ChatStreamingCallbackHandler(BaseCallbackHandler):
         self._buffer = ""
         self._answer_reached = False
 
-    def _emit(self, event: OutboundEvent) -> None:
+    def _emit(self, event: ChatEvent) -> None:
         async_to_sync(self._channel_layer.group_send)(self._group, event.as_channel_message())
 
     def on_llm_start(self, *args, **kwargs) -> None:
@@ -64,7 +64,7 @@ class ChatStreamingCallbackHandler(BaseCallbackHandler):
 
     def on_llm_new_token(self, token: str, **kwargs) -> None:
         if self._answer_reached:
-            self._emit(token_event(self._session_id, token))
+            self._emit(TokenEvent(self._session_id, token))
             return
         self._buffer += token
         marker_index = self._buffer.find(ANSWER_MARKER)
@@ -76,7 +76,7 @@ class ChatStreamingCallbackHandler(BaseCallbackHandler):
         tail = self._buffer[marker_index + len(ANSWER_MARKER) :].lstrip()
         self._buffer = ""
         if tail:
-            self._emit(token_event(self._session_id, tail))
+            self._emit(TokenEvent(self._session_id, tail))
 
     def on_agent_action(self, action, **kwargs) -> None:
         # Fired when the ReAct agent picks a tool; action.tool is the clean tool name. Skip
@@ -85,4 +85,4 @@ class ChatStreamingCallbackHandler(BaseCallbackHandler):
         tool_name = getattr(action, "tool", "") or ""
         if not tool_name or (self._tool_names is not None and tool_name not in self._tool_names):
             return
-        self._emit(status_event(self._session_id, tool_name))
+        self._emit(StatusEvent(self._session_id, tool_name))

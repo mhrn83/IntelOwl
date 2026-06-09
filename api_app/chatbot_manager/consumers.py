@@ -17,11 +17,10 @@ from asgiref.sync import async_to_sync
 from channels.generic.websocket import JsonWebsocketConsumer
 
 from api_app.chatbot_manager.events import (
-    DETAIL_INVALID_MESSAGE,
-    DETAIL_SESSION_NOT_FOUND,
-    ack_payload,
+    AckEvent,
+    ChatErrorDetail,
+    ErrorEvent,
     chat_group_for_user,
-    error_payload,
 )
 from api_app.chatbot_manager.models import ChatSession
 from api_app.chatbot_manager.serializers.chat import MessageRequestSerializer
@@ -46,13 +45,13 @@ class ChatConsumer(JsonWebsocketConsumer):
         self.group_name = chat_group_for_user(user.id)
         self.accept()
         async_to_sync(self.channel_layer.group_add)(self.group_name, self.channel_name)
-        logger.debug("user %s connected to chat group %s", user, self.group_name)
+        logger.debug(f"user {user} connected to chat group {self.group_name}")
 
     def disconnect(self, close_code) -> None:
         group_name = getattr(self, "group_name", None)
         if group_name:
             async_to_sync(self.channel_layer.group_discard)(group_name, self.channel_name)
-        logger.debug("chat ws disconnected (group=%s, code=%s)", group_name, close_code)
+        logger.debug(f"chat ws disconnected (group={group_name}, code={close_code})")
 
     def receive_json(self, content, **kwargs) -> None:
         """Validate one inbound message, resolve its session, and enqueue the agent turn.
@@ -64,7 +63,7 @@ class ChatConsumer(JsonWebsocketConsumer):
         user = self.scope["user"]
         serializer = MessageRequestSerializer(data=content)
         if not serializer.is_valid():
-            self.send_json(error_payload(None, DETAIL_INVALID_MESSAGE))
+            self.send_json(ErrorEvent(None, ChatErrorDetail.INVALID_MESSAGE.value).to_client())
             return
 
         session_id = serializer.validated_data.get("session_id")
@@ -72,11 +71,11 @@ class ChatConsumer(JsonWebsocketConsumer):
         try:
             session = self._resolve_session(user, session_id)
         except ChatSession.DoesNotExist:
-            self.send_json(error_payload(session_id, DETAIL_SESSION_NOT_FOUND))
+            self.send_json(ErrorEvent(session_id, ChatErrorDetail.SESSION_NOT_FOUND.value).to_client())
             return
 
         # Ack the (possibly newly created) session id before the asynchronous stream begins.
-        self.send_json(ack_payload(session.id))
+        self.send_json(AckEvent(session.id).to_client())
         process_chat_message.delay(session.id, message, user.id)
 
     @staticmethod

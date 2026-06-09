@@ -15,13 +15,11 @@ from django.db.models.functions import Coalesce
 from django.utils.timezone import now
 
 from api_app.chatbot_manager.events import (
-    DETAIL_SESSION_NOT_FOUND,
-    DETAIL_TIMEOUT,
-    DETAIL_UNAVAILABLE,
+    ChatErrorDetail,
+    EndEvent,
+    ErrorEvent,
+    StartEvent,
     chat_group_for_user,
-    end_event,
-    error_event,
-    start_event,
 )
 from intel_owl.tasks import FailureLoggedTask
 
@@ -66,15 +64,15 @@ def process_chat_message(session_id: int, user_message: str, user_id: int) -> No
     try:
         session = ChatSession.objects.get(pk=session_id, user_id=user_id)
     except ChatSession.DoesNotExist:
-        logger.warning("process_chat_message: session %s not found for user %s", session_id, user_id)
-        emit(error_event(session_id, DETAIL_SESSION_NOT_FOUND))
+        logger.warning(f"process_chat_message: session {session_id} not found for user {user_id}")
+        emit(ErrorEvent(session_id, ChatErrorDetail.SESSION_NOT_FOUND.value))
         return
 
     user = get_user_model().objects.get(pk=user_id)
     history = DjangoChatMessageHistory(session=session)
     chat_history_text = format_history(history.messages)
 
-    emit(start_event(session_id))
+    emit(StartEvent(session_id))
     try:
         executor = build_agent_executor(user=user, streaming=True)
         # Scope streamed tool-status events to the agent's real tools (drops the internal
@@ -89,12 +87,12 @@ def process_chat_message(session_id: int, user_message: str, user_id: int) -> No
             config={"callbacks": [handler]},
         )
     except SoftTimeLimitExceeded:
-        logger.warning("process_chat_message: timed out for session %s", session_id)
-        emit(error_event(session_id, DETAIL_TIMEOUT))
+        logger.warning(f"process_chat_message: timed out for session {session_id}")
+        emit(ErrorEvent(session_id, ChatErrorDetail.TIMEOUT.value))
         return
     except Exception as exc:  # noqa: BLE001 - any agent/Ollama failure must still reach the client
-        logger.exception("process_chat_message: agent run failed for session %s: %s", session_id, exc)
-        emit(error_event(session_id, DETAIL_UNAVAILABLE))
+        logger.exception(f"process_chat_message: agent run failed for session {session_id}: {exc}")
+        emit(ErrorEvent(session_id, ChatErrorDetail.UNAVAILABLE.value))
         return
 
     response_text = result.get("output", "")
@@ -105,7 +103,7 @@ def process_chat_message(session_id: int, user_message: str, user_id: int) -> No
     ai_message = ChatMessage.objects.create(
         session=session, role=ChatMessage.Role.ASSISTANT, content=response_text
     )
-    emit(end_event(session_id, ai_message.id, response_text))
+    emit(EndEvent(session_id, ai_message.id, response_text))
 
 
 # soft_time_limit=1800: daily maintenance task whose work is a single bulk DELETE that
