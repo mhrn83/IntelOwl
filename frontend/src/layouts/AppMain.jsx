@@ -16,6 +16,7 @@ import {
 } from "../components/Routes";
 import AppHeader from "./AppHeader";
 import Toast from "./Toast";
+import { ChatPanel } from "../components/chat/ChatPanel";
 
 const NoMatch = React.lazy(() => import("./NoMatch"));
 
@@ -52,6 +53,8 @@ function Layout() {
       </main>
       {/* Toasts */}
       <Toast />
+      {/* LLM chat assistant drawer (mounted once; connects lazily on first open) */}
+      <ChatPanel />
     </>
   );
 }

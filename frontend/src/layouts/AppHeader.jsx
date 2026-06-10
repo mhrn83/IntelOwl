@@ -20,7 +20,7 @@ import {
   RiTwitterXFill,
 } from "react-icons/ri";
 import { FaGithub, FaGoogle, FaLinkedin } from "react-icons/fa";
-import { IoSearch } from "react-icons/io5";
+import { IoSearch, IoChatbubbleEllipsesOutline } from "react-icons/io5";
 import { TbReport, TbReportSearch, TbDatabaseSearch } from "react-icons/tb";
 
 // lib
@@ -40,6 +40,7 @@ import NotificationPopoverButton from "../components/jobs/notification/Notificat
 import { useAuthStore } from "../stores/useAuthStore";
 import { useGuideContext } from "../contexts/GuideContext";
 import { useOrganizationStore } from "../stores/useOrganizationStore";
+import { useChatStore } from "../stores/useChatStore";
 
 const guestLinks = (
   <>
@@ -120,8 +121,22 @@ function AuthLinks() {
 function RightLinks({ handleClickStart, isAuthenticated }) {
   const location = useLocation();
   const isRootPath = location.pathname === "/";
+  const toggleChat = useChatStore((state) => state.toggle);
   return (
     <>
+      {isAuthenticated && (
+        <NavItem>
+          <button
+            type="button"
+            id="chat-toggle-btn"
+            className="d-flex-start-center btn text-gray"
+            onClick={toggleChat}
+          >
+            <IoChatbubbleEllipsesOutline />
+            <span className="ms-1">Assistant</span>
+          </button>
+        </NavItem>
+      )}
       {isRootPath && isAuthenticated && (
         <NavItem>
           <button
