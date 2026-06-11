@@ -167,15 +167,22 @@ export function useChatWebSocket() {
     };
     socket.onclose = (closeEvent) => {
       websocket.current = null;
-      clearTurnTimers();
+      // Terminal closes (teardown, clean close, reconnect budget exhausted) end the turn for good:
+      // drop the watchdogs so a stale timer can't fire an error minutes later onto a dead socket.
       if (isUnmounting.current || closeEvent.code === NORMAL_CLOSURE) {
+        clearTurnTimers();
         useChatStore.getState().setConnectionState(ConnectionState.CLOSED);
         return;
       }
       if (reconnectAttempts.current >= MAX_RECONNECT_ATTEMPTS) {
+        clearTurnTimers();
         useChatStore.getState().setConnectionState(ConnectionState.CLOSED);
         return;
       }
+      // Abnormal mid-turn drop: keep the turn watchdogs armed across the reconnect. The in-flight
+      // turn's `start`/`end` lands in the dead window and is never replayed to the new socket (group
+      // frames aren't buffered), so the watchdog is the only thing that unlocks the composer here —
+      // clearing it on close would strand `isStreaming` forever.
       const delay = Math.min(
         RECONNECT_BASE_MS * 2 ** reconnectAttempts.current,
         RECONNECT_CAP_MS,

@@ -253,6 +253,35 @@ describe("useChatWebSocket", () => {
     expect(FakeWebSocket.instances).toHaveLength(2);
   });
 
+  test("keeps the max-turn watchdog armed across a mid-turn reconnect", () => {
+    connectAndOpen();
+    act(() => {
+      lastSocket().mockMessage({ type: "ack", session_id: 5 });
+      lastSocket().mockMessage({ type: "start", session_id: 5 });
+    });
+    expect(useChatStore.getState().isStreaming).toBe(true);
+
+    // socket drops mid-turn, then reconnects; the in-flight turn's `end` is lost in the dead window
+    act(() => {
+      lastSocket().mockServerClose(1006);
+    });
+    act(() => {
+      jest.advanceTimersByTime(1000); // reconnect backoff
+    });
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    act(() => {
+      lastSocket().mockOpen();
+    });
+
+    // the watchdog survived the drop and still unlocks the composer instead of hanging on isStreaming
+    act(() => {
+      jest.advanceTimersByTime(310000);
+    });
+    const state = useChatStore.getState();
+    expect(state.error).toMatch(/too long/i);
+    expect(state.isStreaming).toBe(false);
+  });
+
   test("does not reconnect on a clean close", () => {
     connectAndOpen();
     act(() => {
