@@ -7,10 +7,12 @@ from ..models import ChatMessage, ChatSession
 
 
 class ChatSessionSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(read_only=True, default=None)
+
     class Meta:
         model = ChatSession
-        fields = ["id", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        fields = ["id", "created_at", "updated_at", "title"]
+        read_only_fields = ["id", "created_at", "updated_at", "title"]
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):

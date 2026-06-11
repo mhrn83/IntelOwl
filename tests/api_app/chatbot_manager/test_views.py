@@ -142,6 +142,32 @@ class ChatSessionViewSetTestCase(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_list_annotates_title_from_first_user_message(self):
+        session = ChatSession.objects.create(user=self.user)
+        ChatMessage.objects.create(session=session, role=ChatMessage.Role.USER, content="Show me recent jobs")
+        ChatMessage.objects.create(session=session, role=ChatMessage.Role.ASSISTANT, content="Here they are.")
+        response = self.client.get(self.URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.json()["results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "Show me recent jobs")
+
+    def test_list_truncates_title_to_40_chars(self):
+        session = ChatSession.objects.create(user=self.user)
+        long_msg = "a" * 60
+        ChatMessage.objects.create(session=session, role=ChatMessage.Role.USER, content=long_msg)
+        response = self.client.get(self.URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        title = response.json()["results"][0]["title"]
+        self.assertEqual(len(title), 40)
+        self.assertEqual(title, long_msg[:40])
+
+    def test_list_title_is_null_for_empty_session(self):
+        ChatSession.objects.create(user=self.user)
+        response = self.client.get(self.URL)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.json()["results"][0]["title"])
+
     def tearDown(self):
         ChatSession.objects.filter(user=self.user).delete()
 

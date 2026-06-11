@@ -58,4 +58,10 @@ describe("ChatMessageList", () => {
     render(<ChatMessageList />);
     expect(screen.getByText("partial answer")).toBeInTheDocument();
   });
+
+  test("shows a loading spinner while a session's history is loading", () => {
+    useChatStore.setState({ historyLoading: true });
+    render(<ChatMessageList />);
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
 });

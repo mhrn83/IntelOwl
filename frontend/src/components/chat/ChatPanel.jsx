@@ -5,12 +5,15 @@ import {
   OffcanvasBody,
   Badge,
   Alert,
+  Button,
 } from "reactstrap";
+import { IoListOutline, IoArrowBack } from "react-icons/io5";
 
 import { useChatStore, ConnectionState } from "../../stores/useChatStore";
 import { useChatWebSocket } from "./useChatWebSocket";
 import { ChatMessageList } from "./ChatMessageList";
 import { ChatComposer } from "./ChatComposer";
+import { ChatSessionList } from "./ChatSessionList";
 
 // Connection-state badge shown in the drawer header.
 const CONNECTION_BADGE = {
@@ -33,6 +36,14 @@ export function ChatPanel() {
   const error = useChatStore((state) => state.error);
   const { sendMessage } = useChatWebSocket();
 
+  // Master-detail mode: "conversation" (messages + composer) or "sessions" (the session list).
+  // Local state — purely presentational and not shared with the distant header, unlike `isOpen`.
+  const [view, setView] = React.useState("conversation");
+  // Always reopen the drawer on the conversation view.
+  React.useEffect(() => {
+    if (!isOpen) setView("conversation");
+  }, [isOpen]);
+
   const badge =
     CONNECTION_BADGE[connectionState] ?? CONNECTION_BADGE[ConnectionState.IDLE];
 
@@ -46,6 +57,25 @@ export function ChatPanel() {
       id="chat-panel"
     >
       <OffcanvasHeader toggle={close}>
+        {view === "conversation" ? (
+          <Button
+            color="link"
+            className="p-0 me-2 text-reset"
+            aria-label="Show conversations"
+            onClick={() => setView("sessions")}
+          >
+            <IoListOutline />
+          </Button>
+        ) : (
+          <Button
+            color="link"
+            className="p-0 me-2 text-reset"
+            aria-label="Back to conversation"
+            onClick={() => setView("conversation")}
+          >
+            <IoArrowBack />
+          </Button>
+        )}
         Assistant
         <Badge color={badge.color} className="ms-2">
           {badge.label}
@@ -57,8 +87,14 @@ export function ChatPanel() {
             {error}
           </Alert>
         )}
-        <ChatMessageList />
-        <ChatComposer onSend={sendMessage} />
+        {view === "sessions" ? (
+          <ChatSessionList onSessionChosen={() => setView("conversation")} />
+        ) : (
+          <>
+            <ChatMessageList />
+            <ChatComposer onSend={sendMessage} />
+          </>
+        )}
       </OffcanvasBody>
     </Offcanvas>
   );

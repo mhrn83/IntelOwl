@@ -67,6 +67,7 @@ const initialState = {
   isStreaming: false,
   connectionState: ConnectionState.IDLE,
   error: null,
+  navEpoch: 0,
 };
 
 describe("useChatWebSocket", () => {
@@ -294,5 +295,131 @@ describe("useChatWebSocket", () => {
       jest.advanceTimersByTime(60000);
     });
     expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  test("newChat unbinds the session so a previous session's late frame is ignored", () => {
+    connectAndOpen();
+    act(() => {
+      useChatStore.setState({
+        sessionId: 5,
+        messages: [{ role: "user", content: "x" }],
+      });
+    });
+    act(() => {
+      useChatStore.getState().newChat();
+    });
+    expect(useChatStore.getState().sessionId).toBeNull();
+    // a late `end` from the abandoned session must not append to the fresh conversation
+    act(() => {
+      lastSocket().mockMessage({
+        type: "end",
+        session_id: 5,
+        message_id: 1,
+        content: "late",
+      });
+    });
+    expect(useChatStore.getState().messages).toEqual([]);
+  });
+
+  test("the post-ack watchdog does not fire after the user navigates away mid-turn", () => {
+    connectAndOpen();
+    act(() => {
+      lastSocket().mockMessage({ type: "ack", session_id: 5 });
+    });
+    // user opens a fresh chat before `start` arrives: the abandoned turn's post-ack watchdog
+    // (armed under the old navEpoch) must not raise an error onto the new conversation
+    act(() => {
+      useChatStore.getState().newChat();
+    });
+    act(() => {
+      jest.advanceTimersByTime(20000);
+    });
+    expect(useChatStore.getState().error).toBeNull();
+  });
+
+  test("the max-turn watchdog does not fire after the user navigates away mid-turn", () => {
+    connectAndOpen();
+    act(() => {
+      lastSocket().mockMessage({ type: "ack", session_id: 5 });
+      lastSocket().mockMessage({ type: "start", session_id: 5 });
+    });
+    act(() => {
+      useChatStore.getState().newChat();
+    });
+    act(() => {
+      jest.advanceTimersByTime(310000);
+    });
+    expect(useChatStore.getState().error).toBeNull();
+  });
+
+  test("a stale turn's watchdog does not clobber a newer overlapping turn's timer", () => {
+    connectAndOpen();
+    // turn A starts and arms its max-turn watchdog (epoch 0)
+    act(() => {
+      lastSocket().mockMessage({ type: "ack", session_id: 5 });
+      lastSocket().mockMessage({ type: "start", session_id: 5 });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100000); // A still in flight
+    });
+    // user abandons A mid-turn and starts turn B (epoch bumped by newChat)
+    act(() => {
+      useChatStore.getState().newChat();
+      fireEvent.click(screen.getByText("send"));
+    });
+    act(() => {
+      lastSocket().mockMessage({ type: "ack", session_id: 7 });
+      lastSocket().mockMessage({ type: "start", session_id: 7 });
+    });
+    // A's max-turn deadline elapses while B is still streaming: A's stale callback must NOT null
+    // the ref that now holds B's timer (else B's timer is orphaned and clearTurnTimers can't cancel it)
+    act(() => {
+      jest.advanceTimersByTime(210000); // t = 310000 -> A's timer fires
+    });
+    // B completes cleanly
+    act(() => {
+      lastSocket().mockMessage({
+        type: "end",
+        session_id: 7,
+        message_id: 9,
+        content: "done",
+      });
+    });
+    // B's original deadline passes; a cancelled timer must not resurrect a timeout error on B
+    act(() => {
+      jest.advanceTimersByTime(100000); // t = 410000 -> B's (cancelled) timer would have fired
+    });
+    expect(useChatStore.getState().error).toBeNull();
+  });
+
+  test("after newChat, sending starts a fresh session bound by the next ack", () => {
+    connectAndOpen();
+    act(() => {
+      useChatStore.setState({ sessionId: 5 });
+      useChatStore.getState().newChat();
+    });
+    act(() => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    // a fresh chat sends session_id: null; the server creates the session and returns it in `ack`
+    expect(lastSocket().sent).toEqual([{ message: "hello", session_id: null }]);
+    act(() => {
+      lastSocket().mockMessage({ type: "ack", session_id: 7 });
+      lastSocket().mockMessage({ type: "start", session_id: 7 });
+      lastSocket().mockMessage({ type: "token", session_id: 7, content: "hi" });
+      lastSocket().mockMessage({
+        type: "end",
+        session_id: 7,
+        message_id: 9,
+        content: "hi!",
+      });
+    });
+    const state = useChatStore.getState();
+    expect(state.sessionId).toBe(7);
+    expect(state.messages.at(-1)).toEqual({
+      id: 9,
+      role: "assistant",
+      content: "hi!",
+    });
   });
 });

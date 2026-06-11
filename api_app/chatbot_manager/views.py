@@ -3,6 +3,8 @@
 
 import logging
 
+from django.db.models import OuterRef, Subquery
+from django.db.models.functions import Substr
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
@@ -29,8 +31,27 @@ class ChatSessionViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
+    # Max characters for the annotated session title; keeps list rows single-line.
+    SESSION_TITLE_MAX_LEN = 40
+
     def get_queryset(self):
-        return ChatSession.objects.filter(user=self.request.user)
+        qs = ChatSession.objects.filter(user=self.request.user)
+        # Annotate a title only when listing — single-object GETs (detail/messages) don't need it
+        # and the extra Subquery would be wasted work.
+        if self.action == "list":
+            first_user_msg = (
+                ChatMessage.objects.filter(
+                    session=OuterRef("pk"),
+                    role=ChatMessage.Role.USER,
+                )
+                .order_by("timestamp")
+                .values("content")[:1]
+            )
+            qs = qs.annotate(
+                _raw_title=Subquery(first_user_msg),
+                title=Substr("_raw_title", 1, self.SESSION_TITLE_MAX_LEN),
+            )
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

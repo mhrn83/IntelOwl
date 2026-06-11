@@ -1,6 +1,7 @@
 import React from "react";
+import axios from "axios";
 import "@testing-library/jest-dom";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 
 import { ChatPanel } from "../../../src/components/chat/ChatPanel";
 import {
@@ -8,6 +9,8 @@ import {
   ConnectionState,
   MessageRole,
 } from "../../../src/stores/useChatStore";
+
+jest.mock("axios");
 
 // No-op WebSocket so the lazily-connecting hook does not touch the network in jsdom. It opens on
 // the next tick so the hook transitions CONNECTING -> CONNECTED like a real socket.
@@ -36,6 +39,11 @@ const baseState = {
   isStreaming: false,
   connectionState: ConnectionState.CONNECTED,
   error: null,
+  sessions: [],
+  sessionsLoading: false,
+  sessionsError: null,
+  historyLoading: false,
+  navEpoch: 0,
 };
 
 describe("ChatPanel", () => {
@@ -46,6 +54,8 @@ describe("ChatPanel", () => {
   beforeEach(() => {
     global.WebSocket = StubWebSocket;
     useChatStore.setState(baseState);
+    // the sessions view fetches the list on mount
+    axios.get.mockResolvedValue({ data: { total_pages: 1, results: [] } });
   });
 
   test("renders the composer and the connection badge when open", async () => {
@@ -77,5 +87,25 @@ describe("ChatPanel", () => {
         );
     });
     expect(screen.getByText(/currently unavailable/i)).toBeInTheDocument();
+  });
+
+  test("toggles between the conversation and the sessions view", async () => {
+    render(<ChatPanel />);
+    // starts on the conversation view
+    expect(screen.getByPlaceholderText(/Ask about/i)).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Show conversations/i }),
+    );
+    // sessions view: New chat present, composer gone
+    expect(
+      await screen.findByRole("button", { name: /New chat/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/Ask about/i)).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Back to conversation/i }),
+    );
+    expect(screen.getByPlaceholderText(/Ask about/i)).toBeInTheDocument();
   });
 });

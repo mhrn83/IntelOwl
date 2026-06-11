@@ -88,10 +88,17 @@ export function useChatWebSocket() {
           // post-ack watchdog until the agent proves it is alive by emitting `start`.
           store.applyAck(event);
           if (postAckTimer.current) clearTimeout(postAckTimer.current);
-          postAckTimer.current = setTimeout(() => {
-            postAckTimer.current = null;
-            useChatStore.getState().applyError(WORKER_UNAVAILABLE_TEXT);
-          }, POST_ACK_TIMEOUT_MS);
+          {
+            const epoch = store.navEpoch;
+            postAckTimer.current = setTimeout(() => {
+              // Check the epoch BEFORE clearing the ref: if the user navigated away this turn is
+              // abandoned and the ref may already hold a newer turn's timer — nulling it here would
+              // orphan that timer past clearTurnTimers and fire a stale error on the new turn.
+              if (useChatStore.getState().navEpoch !== epoch) return;
+              postAckTimer.current = null;
+              useChatStore.getState().applyError(WORKER_UNAVAILABLE_TEXT);
+            }, POST_ACK_TIMEOUT_MS);
+          }
           break;
         case ChatEventType.START:
           // Strict demux: `start`/`status`/`token`/`end` fan out to every tab of this user, so a
@@ -103,10 +110,16 @@ export function useChatWebSocket() {
             clearTimeout(postAckTimer.current);
             postAckTimer.current = null;
           }
-          maxTurnTimer.current = setTimeout(() => {
-            maxTurnTimer.current = null;
-            useChatStore.getState().applyError(TURN_TIMEOUT_TEXT);
-          }, MAX_TURN_TIMEOUT_MS);
+          {
+            const epoch = store.navEpoch;
+            maxTurnTimer.current = setTimeout(() => {
+              // See the post-ack watchdog: epoch-check first so a stale callback can't null a ref
+              // that a newer overlapping turn has since taken over.
+              if (useChatStore.getState().navEpoch !== epoch) return;
+              maxTurnTimer.current = null;
+              useChatStore.getState().applyError(TURN_TIMEOUT_TEXT);
+            }, MAX_TURN_TIMEOUT_MS);
+          }
           store.applyStart();
           break;
         case ChatEventType.STATUS:

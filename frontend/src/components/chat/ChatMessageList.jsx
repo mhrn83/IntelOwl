@@ -14,6 +14,7 @@ export function ChatMessageList() {
   const streamingText = useChatStore((state) => state.streamingText);
   const currentTool = useChatStore((state) => state.currentTool);
   const isStreaming = useChatStore((state) => state.isStreaming);
+  const historyLoading = useChatStore((state) => state.historyLoading);
   const bottomRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -22,6 +23,11 @@ export function ChatMessageList() {
 
   return (
     <div className="flex-grow-1 overflow-auto p-3">
+      {historyLoading && (
+        <div className="text-center p-3">
+          <Spinner size="sm" />
+        </div>
+      )}
       {messages.map((message, index) => (
         <ChatMessage
           // committed assistant messages carry a server id; user messages fall back to position
