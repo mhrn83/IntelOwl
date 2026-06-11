@@ -186,3 +186,11 @@ input[type="file"]::file-selector-button {
   position: absolute;
   background: rgb(33, 63, 75);
 }
+
+// chat/
+// Bootstrap's default .btn-close renders a dark glyph that is barely visible on the dark
+// chat drawer. Apply the same filter bootstrap ships in .btn-close-white (reactstrap's
+// OffcanvasHeader hardcodes the btn-close class and exposes no prop to extend it).
+#chat-panel .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
