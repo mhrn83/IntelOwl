@@ -83,6 +83,10 @@ export const useChatStore = create((set, get) => ({
   connectionState: ConnectionState.IDLE,
   // last user-facing error text (cleared when a new turn starts)
   error: null,
+  // true when a turn was acked but the worker produced no output (post-ack watchdog). The transport
+  // is still up, so this — not connectionState — is what tells the badge the assistant itself can't
+  // serve a turn right now. Cleared on the next `start` (the worker proving it is alive again).
+  assistantUnavailable: false,
 
   // --- session list (serializable; the WS hook is untouched — these only change
   // sessionId/messages, which the hook reads live for demux and send) ---
@@ -115,7 +119,12 @@ export const useChatStore = create((set, get) => ({
   // --- inbound frame reducers (called by the hook; demux/filtering happens upstream there) ---
   applyAck: (event) => set({ sessionId: event.session_id }),
   applyStart: () =>
-    set({ ...initialTurnState, isStreaming: true, error: null }),
+    set({
+      ...initialTurnState,
+      isStreaming: true,
+      error: null,
+      assistantUnavailable: false,
+    }),
   applyStatus: (event) => set({ currentTool: event.tool }),
   applyToken: (event) =>
     set((state) => ({ streamingText: state.streamingText + event.content })),
@@ -135,6 +144,10 @@ export const useChatStore = create((set, get) => ({
   // The partial streaming bubble is dropped (the server drops the turn too) but the user's message
   // stays visible so they can retry.
   applyError: (detail) => set({ ...initialTurnState, error: detail }),
+  // Like applyError, but specifically for the post-ack watchdog: the turn was acked yet the worker
+  // produced nothing, so the assistant is unavailable — flag the badge in addition to the banner.
+  applyUnavailable: (detail) =>
+    set({ ...initialTurnState, error: detail, assistantUnavailable: true }),
 
   // --- session management (REST) ---
   // Load the user's sessions (every page) for the list view; the queryset is user-scoped server-side.

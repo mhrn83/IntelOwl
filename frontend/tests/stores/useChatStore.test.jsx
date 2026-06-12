@@ -24,6 +24,7 @@ const initialState = {
   sessionsError: null,
   historyLoading: false,
   navEpoch: 0,
+  assistantUnavailable: false,
 };
 
 describe("useChatStore reducers", () => {
@@ -100,6 +101,26 @@ describe("useChatStore reducers", () => {
     expect(state.error).toBe("boom");
     expect(state.isStreaming).toBe(false);
     expect(state.streamingText).toBe("");
+  });
+
+  test("applyUnavailable flags the assistant unavailable and ends the turn", () => {
+    useChatStore.setState({ streamingText: "partial", isStreaming: true });
+    useChatStore
+      .getState()
+      .applyUnavailable(
+        "The assistant is currently unavailable. Please try again.",
+      );
+    const state = useChatStore.getState();
+    expect(state.assistantUnavailable).toBe(true);
+    expect(state.error).toMatch(/unavailable/i);
+    expect(state.isStreaming).toBe(false);
+    expect(state.streamingText).toBe("");
+  });
+
+  test("applyStart clears a prior assistantUnavailable flag", () => {
+    useChatStore.setState({ assistantUnavailable: true });
+    useChatStore.getState().applyStart();
+    expect(useChatStore.getState().assistantUnavailable).toBe(false);
   });
 
   test("setConnectionState updates the badge state", () => {

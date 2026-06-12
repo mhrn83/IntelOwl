@@ -68,6 +68,7 @@ const initialState = {
   connectionState: ConnectionState.IDLE,
   error: null,
   navEpoch: 0,
+  assistantUnavailable: false,
 };
 
 describe("useChatWebSocket", () => {
@@ -211,6 +212,8 @@ describe("useChatWebSocket", () => {
     const state = useChatStore.getState();
     expect(state.error).toMatch(/unavailable/i);
     expect(state.isStreaming).toBe(false);
+    // the worker did not pick up the turn -> the badge must reflect it (not just the error banner)
+    expect(state.assistantUnavailable).toBe(true);
   });
 
   test("post-ack watchdog is cleared once start arrives", () => {
@@ -237,6 +240,8 @@ describe("useChatWebSocket", () => {
     const state = useChatStore.getState();
     expect(state.error).toMatch(/too long/i);
     expect(state.isStreaming).toBe(false);
+    // a mid-turn timeout is not a worker-down signal, so it must NOT flip the availability badge
+    expect(state.assistantUnavailable).toBe(false);
   });
 
   test("reconnects with backoff on an unexpected close", () => {

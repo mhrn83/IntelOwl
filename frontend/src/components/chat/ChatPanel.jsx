@@ -6,8 +6,10 @@ import {
   Badge,
   Alert,
   Button,
+  UncontrolledTooltip,
 } from "reactstrap";
 import { IoListOutline, IoArrowBack } from "react-icons/io5";
+import { MdInfoOutline } from "react-icons/md";
 
 import { useChatStore, ConnectionState } from "../../stores/useChatStore";
 import { useChatWebSocket } from "./useChatWebSocket";
@@ -24,6 +26,16 @@ const CONNECTION_BADGE = {
   [ConnectionState.CLOSED]: { color: "danger", label: "Disconnected" },
 };
 
+// Shown instead of the green "Connected" badge when the socket is up but the chatbot worker isn't
+// serving turns (see useChatStore.assistantUnavailable).
+const UNAVAILABLE_BADGE = { color: "warning", label: "Unavailable" };
+
+// One-line description behind the header info icon, mirroring the MdInfoOutline + tooltip pattern
+// used elsewhere in IntelOwl (e.g. TLPSelectInput).
+const ASSISTANT_INFO_TEXT =
+  "Privacy-preserving assistant: ask about your IntelOwl data in natural language. " +
+  "All inference runs locally via Ollama — nothing is sent to external services.";
+
 /**
  * The chat drawer. Mounted once, globally (AppMain Layout), so it overlays every authenticated
  * page and survives open/close; the WebSocket lives in useChatWebSocket, which lazily connects the
@@ -33,6 +45,9 @@ export function ChatPanel() {
   const isOpen = useChatStore((state) => state.isOpen);
   const close = useChatStore((state) => state.close);
   const connectionState = useChatStore((state) => state.connectionState);
+  const assistantUnavailable = useChatStore(
+    (state) => state.assistantUnavailable,
+  );
   const error = useChatStore((state) => state.error);
   const { sendMessage } = useChatWebSocket();
 
@@ -44,8 +59,13 @@ export function ChatPanel() {
     if (!isOpen) setView("conversation");
   }, [isOpen]);
 
+  // The badge reflects assistant availability, not just transport: a connected socket whose worker
+  // isn't serving turns (assistantUnavailable) must not keep reading green "Connected".
   const badge =
-    CONNECTION_BADGE[connectionState] ?? CONNECTION_BADGE[ConnectionState.IDLE];
+    assistantUnavailable && connectionState === ConnectionState.CONNECTED
+      ? UNAVAILABLE_BADGE
+      : CONNECTION_BADGE[connectionState] ??
+        CONNECTION_BADGE[ConnectionState.IDLE];
 
   return (
     <Offcanvas
@@ -77,6 +97,16 @@ export function ChatPanel() {
           </Button>
         )}
         Assistant
+        <MdInfoOutline id="chat-assistant-info" className="ms-1" />
+        <UncontrolledTooltip
+          target="chat-assistant-info"
+          placement="bottom"
+          fade={false}
+          autohide={false}
+          innerClassName="p-2 text-start"
+        >
+          {ASSISTANT_INFO_TEXT}
+        </UncontrolledTooltip>
         <Badge color={badge.color} className="ms-2">
           {badge.label}
         </Badge>

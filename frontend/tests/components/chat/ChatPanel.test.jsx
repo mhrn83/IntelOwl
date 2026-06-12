@@ -44,6 +44,7 @@ const baseState = {
   sessionsError: null,
   historyLoading: false,
   navEpoch: 0,
+  assistantUnavailable: false,
 };
 
 describe("ChatPanel", () => {
@@ -63,6 +64,20 @@ describe("ChatPanel", () => {
     expect(screen.getByPlaceholderText(/Ask about/i)).toBeInTheDocument();
     // the hook flips CONNECTING -> CONNECTED once the (stub) socket opens
     expect(await screen.findByText("Connected")).toBeInTheDocument();
+  });
+
+  test("shows an Unavailable badge when the assistant is unavailable while connected", async () => {
+    useChatStore.setState({ assistantUnavailable: true });
+    render(<ChatPanel />);
+    // the socket is connected (transport fine) but the assistant can't serve a turn: the badge must
+    // say so instead of staying green "Connected".
+    expect(await screen.findByText("Unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+  });
+
+  test("renders an info tooltip describing the assistant", () => {
+    render(<ChatPanel />);
+    expect(document.getElementById("chat-assistant-info")).toBeInTheDocument();
   });
 
   test("renders the conversation from store state", () => {

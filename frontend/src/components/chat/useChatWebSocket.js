@@ -96,7 +96,8 @@ export function useChatWebSocket() {
               // orphan that timer past clearTurnTimers and fire a stale error on the new turn.
               if (useChatStore.getState().navEpoch !== epoch) return;
               postAckTimer.current = null;
-              useChatStore.getState().applyError(WORKER_UNAVAILABLE_TEXT);
+              // worker-down signal: flip the availability badge, not just the error banner
+              useChatStore.getState().applyUnavailable(WORKER_UNAVAILABLE_TEXT);
             }, POST_ACK_TIMEOUT_MS);
           }
           break;
