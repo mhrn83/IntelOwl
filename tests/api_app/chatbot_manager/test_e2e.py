@@ -69,7 +69,8 @@ def _fake_tool_calling_executor(user):
     (chat.token), then the final output. Keeps the handler, the tool and the pending-action store
     real while Ollama is never reached."""
     real_tools = build_tools(user=user)
-    analyze_tool = next(tool for tool in real_tools if tool.name == "analyze_observable")
+    # dict lookup (not next()) so a missing tool fails loudly with a KeyError naming it
+    analyze_tool = {tool.name: tool for tool in real_tools}["analyze_observable"]
 
     class _FakeExecutor:
         # The task derives handler.tool_names from this real registry, so the chat.status filter
@@ -139,8 +140,9 @@ class ChatPipelineE2ETestCase(TestCase):
             patch("api_app.chatbot_manager.consumers.process_chat_message") as consumer_task,
         ):
             # The consumer enqueues via .delay; forward to the real task body so the hand-off
-            # contract (exact args) is exercised and the turn runs synchronously in-test.
-            consumer_task.delay.side_effect = lambda *args: process_chat_message(*args)
+            # contract (exact args) is exercised and the turn runs synchronously in-test. The task
+            # object is itself callable, so it is the side_effect directly (no wrapping lambda).
+            consumer_task.delay.side_effect = process_chat_message
             content = {"message": message}
             if session_id is not None:
                 content["session_id"] = session_id
@@ -207,10 +209,13 @@ class ChatPipelineE2ETestCase(TestCase):
         # launch: a real user POST of it to the confirm endpoint starts the job (M-1 — the model
         # itself never launches).
         _consumer, _layer, _ack, relay_frames = self._run_turn()
-        action = next(
+        # exactly one action_required frame is expected; index it (not next()) so an empty/oversized
+        # match fails loudly here rather than with a bare StopIteration
+        action_frames = [
             frame for frame in relay_frames if frame["type"] == events.ChatEventType.ACTION_REQUIRED.value
-        )
-        pending_id = action["pending_id"]
+        ]
+        self.assertEqual(len(action_frames), 1)
+        pending_id = action_frames[0]["pending_id"]
 
         client = APIClient()
         client.force_authenticate(self.user)
