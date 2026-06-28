@@ -66,7 +66,7 @@ RUN touch ${LOG_PATH}/django/api_app.log ${LOG_PATH}/django/api_app_errors.log \
     && touch ${LOG_PATH}/asgi/daphne.log \
     && mkdir -p -m 755 ${PYTHONPATH}/.cache \
     # download github stuff
-    && ${PYTHONPATH}/api_app/analyzers_manager/repo_downloader.sh
+    && ${PYTHONPATH}/api_app/analyzers_manager/repo_downloader.sh || true
 
 COPY . $PYTHONPATH
 
