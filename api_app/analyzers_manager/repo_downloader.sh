@@ -32,11 +32,38 @@ curl -fSL "$DNSTWIST_RAW_BASE/common_tlds.dict" \
 
 # download exiftool
 # https://exiftool.org/install.html#Unix
-mkdir exiftool_download
-cd exiftool_download || exit
-version=$(curl https://exiftool.org/ver.txt)
+# Define directories for clarity
+DOWNLOAD_DIR="exiftool_download"
+DEPLOY_DIR="/opt/deploy/exiftool_download"
+
+# 1. Create and enter directory
+mkdir -p "$DOWNLOAD_DIR" || { echo "Failed to create directory"; exit 1; }
+cd "$DOWNLOAD_DIR" || { echo "Failed to enter directory"; exit 1; }
+
+# 2. Get version with error handling
+version=$(curl -s https://exiftool.org/ver.txt)
+if [[ -z "$version" ]]; then
+    echo "Error: Could not retrieve version number."
+    exit 1
+fi
 echo "$version" >> exiftool_version.txt
-wget "https://exiftool.org/Image-ExifTool-$version.tar.gz"
-gzip -dc "Image-ExifTool-$version.tar.gz" | tar -xf -
-cd "Image-ExifTool-$version" || exit
-chown -R www-data:www-data /opt/deploy/exiftool_download
+
+# 3. Handle wget errors
+# -q: quiet, -O: output file.
+# Checking if the file actually exists after the command
+if ! wget -q "https://exiftool.org/Image-ExifTool-$version.tar.gz"; then
+    echo "Error: Failed to download ExifTool version $version."
+    exit 1
+fi
+
+# 4. Handle extraction errors
+if ! gzip -dc "Image-ExifTool-$version.tar.gz" | tar -xf -; then
+    echo "Error: Failed to extract files."
+    exit 1
+fi
+
+# 5. Handle directory navigation and permissions
+cd "Image-ExifTool-$version" || { echo "Failed to enter extracted directory"; exit 1; }
+chown -R www-data:www-data "$DEPLOY_DIR" || { echo "Warning: chown failed (check sudo permissions)"; }
+
+echo "ExifTool $version deployed successfully."
