@@ -8,6 +8,7 @@ shared between the REST view and the WebSocket consumer so a user who sends via
 both paths hits the same bucket.
 """
 
+import math
 import time
 
 from django.core.cache import caches
@@ -39,9 +40,11 @@ class RateLimiter:
         current = self._cache.get(self._cache_key(key), 0)
         if current < self.limit:
             return True, 0
-        # Estimate how long until the window rolls over.
+        # Estimate how long until the window rolls over. Round up: truncating with int()
+        # can return 0 in the final second of the window (telling the client to retry
+        # immediately while it is still limited), and always under-estimates the wait.
         elapsed = time.time() % self.window_seconds
-        retry_after = int(self.window_seconds - elapsed)
+        retry_after = math.ceil(self.window_seconds - elapsed)
         return False, retry_after
 
     def increment(self, key: str) -> int:

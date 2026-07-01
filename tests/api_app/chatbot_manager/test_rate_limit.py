@@ -68,6 +68,22 @@ class RateLimiterAllowTests(SimpleTestCase):
         self.assertGreater(retry_after, 0, "retry_after should be positive")
 
     @override_settings(CACHES=TEST_CACHES)
+    def test_retry_after_positive_at_end_of_window(self):
+        """In the final fraction of a window retry_after must still be >= 1: int()
+        truncation would return 0 here (regression guard for the flaky failure)."""
+        limiter = _make_limiter()
+        user = _fresh_key()
+        # 1742345580 is exactly on a 60s boundary; +59.7 puts us 0.3s before the next
+        # rollover, so window_seconds - elapsed = 0.3 (int() -> 0, ceil() -> 1).
+        end_of_window = 1742345580.0 + 59.7
+        with patch("api_app.chatbot_manager.rate_limit.time.time", return_value=end_of_window):
+            for _ in range(_limit):
+                limiter.increment(user)
+            allowed, retry_after = limiter.allow(user)
+        self.assertFalse(allowed)
+        self.assertGreaterEqual(retry_after, 1)
+
+    @override_settings(CACHES=TEST_CACHES)
     def test_retry_after_decreases_as_time_passes(self):
         """retry_after is recalculated from the current time, so it shrinks as the
         window progresses."""
