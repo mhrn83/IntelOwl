@@ -9,7 +9,7 @@ declare -A env_arguments=(["prod"]=1 ["test"]=1 ["ci"]=1)
 declare -A test_mode=(["test"]=1 ["ci"]=1)
 declare -A cmd_arguments=(["build"]=1 ["up"]=1 ["start"]=1 ["restart"]=1 ["down"]=1 ["stop"]=1 ["kill"]=1 ["logs"]=1 ["ps"]=1)
 
-declare -A path_mapping=(["default"]="docker/default.yml" ["postgres"]="docker/postgres.override.yml" ["rabbitmq"]="docker/rabbitmq.override.yml" ["test"]="docker/test.override.yml" ["ci"]="docker/ci.override.yml" ["custom"]="docker/custom.override.yml" ["traefik"]="docker/traefik.yml" ["traefik_prod"]="docker/traefik_prod.yml" ["traefik_local"]="docker/traefik_local.yml" ["multi_queue"]="docker/multi-queue.override.yml" ["test_multi_queue"]="docker/test.multi-queue.override.yml" ["flower"]="docker/flower.override.yml" ["test_flower"]="docker/test.flower.override.yml" ["elastic"]="docker/elasticsearch.override.yml" ["https"]="docker/https.override.yml" ["nfs"]="docker/nfs.override.yml" ["redis"]="docker/redis.override.yml" ["nginx_default"]="docker/nginx.override.yml" ["ollama"]="docker/ollama.override.yml" ["test_ollama"]="docker/test.ollama.override.yml")
+declare -A path_mapping=(["default"]="docker/default.yml" ["postgres"]="docker/postgres.override.yml" ["rabbitmq"]="docker/rabbitmq.override.yml" ["test"]="docker/test.override.yml" ["ci"]="docker/ci.override.yml" ["custom"]="docker/custom.override.yml" ["traefik"]="docker/traefik.yml" ["traefik_prod"]="docker/traefik_prod.yml" ["traefik_local"]="docker/traefik_local.yml" ["multi_queue"]="docker/multi-queue.override.yml" ["test_multi_queue"]="docker/test.multi-queue.override.yml" ["flower"]="docker/flower.override.yml" ["test_flower"]="docker/test.flower.override.yml" ["elastic"]="docker/elasticsearch.override.yml" ["https"]="docker/https.override.yml" ["nfs"]="docker/nfs.override.yml" ["redis"]="docker/redis.override.yml" ["nginx_default"]="docker/nginx.override.yml" ["ollama"]="docker/ollama.override.yml" ["test_ollama"]="docker/test.ollama.override.yml" ["ci_ollama"]="docker/ci.ollama.override.yml")
 print_synopsis () {
   echo "SYNOPSIS"
   echo -e "    start <env> <command> [OPTIONS]"
@@ -334,6 +334,12 @@ if [[ $env_argument == "test" ]]; then
       compose_files+=("${path_mapping["test_$value"]}")
     fi
   done
+elif [[ $env_argument == "ci" ]]; then
+  # In ci mode --ollama pulls in ollama.override.yml (via the params loop above), whose chatbot
+  # worker is pinned to the pulled release image; repoint it to the built :ci image.
+  if [ "${params["ollama"]}" ]; then
+    compose_files+=("${path_mapping["ci_ollama"]}")
+  fi
 fi
 
 # add and parse analyzers

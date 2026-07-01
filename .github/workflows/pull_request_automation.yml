@@ -87,10 +87,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Startup script launch (Slow)
-        if: contains(github.base_ref, 'master')
+        # Only the develop -> master release PR runs the full build: extra analyzers plus the
+        # chatbot stack (--ollama), which smoke-tests the ollama + celery_worker_chatbot topology
+        # on the :ci image. Kept off every other PR because the model pull is heavy.
+        if: github.base_ref == 'master' && github.head_ref == 'develop'
         run: |
           cp docker/env_file_integrations_template docker/env_file_integrations
-          ./start ci up --malware_tools_analyzers --phishing_analyzers -- --build -d
+          ./start ci up --malware_tools_analyzers --phishing_analyzers --ollama -- --build -d
         env:
           DOCKER_BUILDKIT: 1
           BUILDKIT_PROGRESS: "plain"
@@ -98,7 +101,9 @@ jobs:
           REPO_DOWNLOADER_ENABLED: false
 
       - name: Startup script launch (Fast)
-        if: "!contains(github.base_ref, 'master')"
+        # Exact complement of the Slow step so every other PR (incl. a non-develop head into
+        # master) still gets a container up for the test steps below.
+        if: ${{ !(github.base_ref == 'master' && github.head_ref == 'develop') }}
         run: |
           ./start ci up -- --build -d
         env:
