@@ -1,8 +1,8 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
-import logging
 import re
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
@@ -16,7 +16,6 @@ from api_app.chatbot_manager.placeholder_guard import (
 )
 
 SESSION_ID = 11
-GUARD_LOGGER = "api_app.chatbot_manager.placeholder_guard"
 
 
 class FindPlaceholdersTestCase(SimpleTestCase):
@@ -90,15 +89,6 @@ class FindPlaceholdersTestCase(SimpleTestCase):
 class GuardAnswerTestCase(SimpleTestCase):
     """A flagged answer is annotated, never edited; a clean answer is untouched and silent."""
 
-    def setUp(self):
-        super().setUp()
-        self._disabled_level = logging.root.manager.disable
-        logging.disable(logging.NOTSET)
-
-    def tearDown(self):
-        logging.disable(self._disabled_level)
-        super().tearDown()
-
     def test_clean_answer_is_returned_byte_for_byte(self):
         text = "Job #42 is malicious (reliability 7/10), supported by AILTypoSquatting."
         self.assertEqual(guard_answer(text, session_id=SESSION_ID), text)
@@ -110,14 +100,18 @@ class GuardAnswerTestCase(SimpleTestCase):
         self.assertEqual(guarded.count(PLACEHOLDER_NOTICE), 1)
 
     def test_detection_is_logged_with_the_session_and_the_spans(self):
-        with self.assertLogs(GUARD_LOGGER, level="WARNING") as logs:
+        with patch("api_app.chatbot_manager.placeholder_guard.logger.warning") as mock_warning:
             guard_answer("Use [Playbook X].", session_id=SESSION_ID)
-        self.assertIn("session=11", logs.output[0])
-        self.assertIn("[Playbook X]", logs.output[0])
+        mock_warning.assert_called_once()
+        args = mock_warning.call_args[0]
+        self.assertIn("session=%s", args[0])
+        self.assertEqual(args[1], SESSION_ID)
+        self.assertEqual(args[2], ["[Playbook X]"])
 
     def test_clean_answer_logs_nothing(self):
-        with self.assertNoLogs(GUARD_LOGGER, level="WARNING"):
+        with patch("api_app.chatbot_manager.placeholder_guard.logger.warning") as mock_warning:
             guard_answer("Job #42 is malicious.", session_id=SESSION_ID)
+        mock_warning.assert_not_called()
 
 
 class StripNoticeTestCase(SimpleTestCase):
