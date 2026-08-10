@@ -1,6 +1,7 @@
 # This file is a part of IntelOwl https://github.com/intelowlproject/IntelOwl
 # See the file 'LICENSE' for copying permission.
 
+import logging
 import re
 
 from django.test import SimpleTestCase
@@ -88,6 +89,15 @@ class FindPlaceholdersTestCase(SimpleTestCase):
 
 class GuardAnswerTestCase(SimpleTestCase):
     """A flagged answer is annotated, never edited; a clean answer is untouched and silent."""
+
+    def setUp(self):
+        super().setUp()
+        self._disabled_level = logging.root.manager.disable
+        logging.disable(logging.NOTSET)
+
+    def tearDown(self):
+        logging.disable(self._disabled_level)
+        super().tearDown()
 
     def test_clean_answer_is_returned_byte_for_byte(self):
         text = "Job #42 is malicious (reliability 7/10), supported by AILTypoSquatting."
