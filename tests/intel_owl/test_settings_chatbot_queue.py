@@ -69,6 +69,7 @@ class ChatbotQueueSettingTestCase(SimpleTestCase):
             env=env,
             text=True,
             timeout=PROBE_TIMEOUT_SECONDS,
+            check=False,
         )
         self.assertEqual(
             result.returncode,
