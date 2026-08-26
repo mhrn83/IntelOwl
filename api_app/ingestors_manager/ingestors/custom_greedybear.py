@@ -1,5 +1,7 @@
 import requests
 
+from django.conf import settings
+
 from api_app.ingestors_manager.classes import Ingestor
 from api_app.ingestors_manager.exceptions import (
     IngestorConfigurationException,
@@ -45,3 +47,41 @@ class CustomGreedyBear(Ingestor):
 
             for url in event['downloaded_urls']:
                 yield url
+
+    def health_check(self, user=None) -> tuple:
+        if settings.STAGE_CI or settings.MOCK_CONNECTIONS:
+            return True, 'Mock connection successful'
+
+        params = self._config.parameters.annotate_configured(self._config, user).annotate_value_for_user(
+            self._config, user
+        )
+
+        base_url = None
+        api_key = None
+        lookback_time = 30
+
+        for param in params:
+            if param.name == 'base_url':
+                base_url = param.value
+            elif param.name == 'api_key':
+                api_key = param.value
+            elif param.name == 'lookback_minutes':
+                lookback_time = param.value
+
+        if not base_url or not api_key or lookback_time <= 0:
+            return False, 'Missing or bad config parameters'
+
+        req_url = f'{base_url.rsplit("/")}/api/health/'
+        header = {'Authorization': f'Token {api_key}'}
+
+        try:
+            response = requests.get(req_url, headers=header)
+            response.raise_for_status()
+            content = response.json()
+        except Exception as e:
+            return False, f'Connection failed {(str(e))}'
+
+        if content['system'].get('qcluster') != 'up':
+            return False, 'Greedybear is down'
+
+        return True, 'Connected successfully'
