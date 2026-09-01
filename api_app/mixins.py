@@ -904,6 +904,8 @@ class MISPMixin(metaclass=abc.ABCMeta):
         Classification.GENERIC: 'text',
     }
 
+    misp: pymisp.PyMISP
+
     def add_misp_event_attr(self, event: pymisp.MISPEvent, attr: tuple):
         """Adds an attribute to the provided MISP event."""
         attr_value, attr_class = attr
@@ -916,27 +918,27 @@ class MISPMixin(metaclass=abc.ABCMeta):
 
         event.add_attribute(_type, attr_value)
 
-    def find_misp_event(self, misp: pymisp.PyMISP, base_attr_value: str) -> pymisp.MISPEvent:
+    def find_misp_event(self, base_attr_value: str) -> pymisp.MISPEvent:
         """
         Finds MISP event with the base attribute included 
         through the events with 'tpot-sensors' tag.
         """
-        results = misp.search(controller='events', tags=[
-                              self.SOURCE_TAG], value=base_attr_value, pythonify=True)
+        results = self.misp.search(controller='events', tags=[
+                                   self.SOURCE_TAG], value=base_attr_value, pythonify=True)
         if results:
             return results[0]
         else:
             return None
 
-    def find_misp_object(self, misp: pymisp.PyMISP, attr_value: str) -> pymisp.MISPObject:
+    def find_misp_object(self, attr_value: str) -> pymisp.MISPObject:
         """Finds MISP object with the attribute included."""
-        results = misp.search(controller='objects', value=attr_value, pythonify=True)
+        results = self.misp.search(controller='objects', value=attr_value, pythonify=True)
         if results:
             return results[0]
         else:
             return None
 
-    def create_misp_event(self, misp: pymisp.PyMISP, base_attr: tuple) -> pymisp.MISPEvent:
+    def create_misp_event(self, base_attr: tuple) -> pymisp.MISPEvent:
         """Creates a MISP event with base attribute."""
         event = pymisp.MISPEvent()
         event.info = f'T-POT sensors'
@@ -955,7 +957,7 @@ class MISPMixin(metaclass=abc.ABCMeta):
             base_object.add_attribute('domain', attr_value)
 
         event.add_object(base_object)
-        created_event = misp.add_event(event, pythonify=True)
+        created_event = self.misp.add_event(event, pythonify=True)
 
         if isinstance(created_event, dict):
             errors = created_event.get("errors", [])
@@ -965,12 +967,12 @@ class MISPMixin(metaclass=abc.ABCMeta):
 
         return created_event
 
-    def get_misp_event(self, misp: pymisp.PyMISP, base_attr: tuple) -> pymisp.MISPEvent:
+    def get_misp_event(self, base_attr: tuple) -> pymisp.MISPEvent:
         """Finds or creates a MISP event according to the base attribute source and type."""
         attr_value, _ = base_attr
-        event = self.find_misp_event(misp, attr_value)
+        event = self.find_misp_event(attr_value)
         if not event:
-            event = self.create_misp_event(misp, base_attr)
+            event = self.create_misp_event(base_attr)
 
         return event
 
@@ -1001,9 +1003,46 @@ class MISPMixin(metaclass=abc.ABCMeta):
 
         return (None, None)
 
-    def add_attribute_sighting(self, misp: pymisp.PyMISP, attr_id: str):
+    def add_attribute_sighting(self, attr_id: str):
         """Adds a positive sighting to an attribute."""
-        misp.add_sighting(
+        self.misp.add_sighting(
             sighting={'type': '0'},  # Positive sighting
             attribute=attr_id
+        )
+
+    def handle_event_object(self, event: pymisp.MISPEvent, included_attr: str,
+                            object_name: str, relation_type: str, comment: str,
+                            ref_object: pymisp.MISPObject, attributes: list,
+                            ref_dir: int = 1, standalone: bool = True,
+                            custom_object_template: pymisp.MISPObject = None):
+        """
+        Sights an existing object which includes
+        specifeid attribute in the event or just
+        add reference if such object exists.
+        Otherwise, creates a new object.
+        """
+        attr, _ = self.find_object_attr(event, included_attr, object_name)
+        if attr:
+            self.add_attribute_sighting(attr.uuid)
+            return
+
+        misp_object = self.find_misp_object(included_attr)
+        if not misp_object:
+            misp_object = pymisp.MISPObject(
+                name=object_name,
+                strict=True,
+                standalone=standalone,
+                misp_objects_template_custom=custom_object_template
+            )
+
+            for attr_name, attr_value in attributes:
+                misp_object.add_attribute(attr_name, attr_value)
+
+            event.add_object(misp_object)
+
+        referencing, referenced = (ref_object, misp_object) if ref_dir == 1 else (misp_object, ref_object)
+        referencing.add_reference(
+            referenced_uuid=referenced.uuid,
+            relationship_type=relation_type,
+            comment=comment
         )
