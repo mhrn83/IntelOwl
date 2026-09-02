@@ -10,11 +10,13 @@ from typing import Dict, List, Tuple
 from zipfile import ZipFile
 
 import requests
+import pymisp
 from django.core.cache import cache
 from django.utils import timezone
 from jbxapi import ApiError, JoeSandbox
 from rest_framework.response import Response
 
+from api_app import helpers
 from api_app.analyzers_manager.classes import BaseAnalyzerMixin
 from api_app.analyzers_manager.exceptions import AnalyzerRunException
 from api_app.analyzers_manager.models import AnalyzerRulesFileVersion, PythonModule
@@ -891,3 +893,78 @@ class IPQualityScoreMixin:
             logger.info(f"Report pending. Retrying in {self.polling_interval}s...")
             time.sleep(self.polling_interval)
         return result
+
+class MISPMixin(metaclass=abc.ABCMeta):
+
+    SOURCE_TAG = 'source:tpot-sensors'
+    INTELOWL_MISP_TYPE_MAP = {
+        Classification.IP: 'ip-src',
+        Classification.DOMAIN: 'domain',
+        Classification.URL: 'url',
+        Classification.GENERIC: 'text',
+    }
+
+    def add_misp_event_attr(self, event: pymisp.MISPEvent, attr: tuple):
+        """Adds an attribute to the provided MISP event."""
+        attr_value, attr_class = attr
+
+        _type = helpers.get_hash_type(attr_value)
+        if _type is not None:
+            _type = _type.replace('-', '')
+        else:
+            _type = self.INTELOWL_MISP_TYPE_MAP.get(attr_class, 'text')
+
+        event.add_attribute(_type, attr_value)
+
+    def find_misp_event(self, misp: pymisp.PyMISP, base_attr_value: str) -> pymisp.MISPEvent:
+        """
+        Finds MISP event with the base attribute included 
+        through the events with 'tpot-sensors' tag.
+        """
+        results = misp.search(controller='events', tags=[
+                              self.SOURCE_TAG], value=base_attr_value, pythonify=True)
+        if results:
+            return results[0]
+        else:
+            return None
+
+    def create_misp_event(self, misp: pymisp.PyMISP, base_attr: tuple) -> pymisp.MISPEvent:
+        """Creates a MISP event with base attribute."""
+        event = pymisp.MISPEvent()
+        event.info = f'T-POT sensors'
+        event.distribution = 0  # your_organisation_only
+        event.add_tag(self.SOURCE_TAG)
+
+        self.add_misp_event_attr(event, base_attr)
+
+        created_event = misp.add_event(event, pythonify=True)
+
+        if isinstance(created_event, dict):
+            errors = created_event.get("errors", [])
+            if errors:
+                logger.error(f'Could not add event to the misp: {str(errors)}')
+            return None
+
+        return created_event
+
+    def get_misp_event(self, misp: pymisp.PyMISP, base_attr: tuple) -> pymisp.MISPEvent:
+        """Finds or creates a MISP event according to the base attribute source and type."""
+        attr_value, _ = base_attr
+        event = self.find_misp_event(misp, attr_value)
+        if not event:
+            event = self.create_misp_event(misp, base_attr)
+
+        return event
+
+    def find_attr_id(self, event: pymisp.MISPEvent, attr_value: str):
+        """Finds the uuid of an attribute of the provided event."""
+        attr_id = next(
+            (attr.uuid for attr in event.attributes if attr.value == attr_value), None)
+        return attr_id
+
+    def add_attribute_sighting(self, misp: pymisp.PyMISP, attr_id: str):
+        """Adds a positive sighting to an attribute."""
+        misp.add_sighting(
+            sighting={'type': '0'},  # Positive sighting
+            attribute=attr_id
+        )
