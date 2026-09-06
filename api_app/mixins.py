@@ -932,6 +932,9 @@ class MISPMixin(metaclass=abc.ABCMeta):
 
     def find_misp_object(self, attr_value: str) -> pymisp.MISPObject:
         """Finds MISP object with the attribute included."""
+        if not attr_value:
+            return None
+
         results = self.misp.search(controller='objects', value=attr_value, pythonify=True)
         if results:
             return results[0]

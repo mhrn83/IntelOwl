@@ -1,4 +1,5 @@
 import requests
+from datetime import datetime, timezone
 
 from django.conf import settings
 import pymisp
