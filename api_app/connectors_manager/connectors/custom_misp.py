@@ -29,33 +29,97 @@ class CustomMISP(CTIConnector, MISPMixin):
 
         return (positives, total)
 
-    def _add_virustotal_object(self, event: pymisp.MISPEvent, report: dict):
-        """Build a VT MISP object and add it to the MISP event."""
-        vt_report = pymisp.MISPObject(
-            name='virustotal-report',
-            strict=True,
-            standalone=False
-        )
+    def _attach_galaxy(self, misp_entity: pymisp.MISPEvent | pymisp.MISPAttribute,
+                       galaxy_name: str, cluster_name: str):
+        """Find and attach a cluster to the misp entity."""
+        if not cluster_name:
+            return
 
+        galaxies = self.misp.search_galaxy(value=galaxy_name, pythonify=True)
+        if galaxies:
+            clusters = self.misp.search_galaxy_clusters(
+                galaxies[0], searchall=cluster_name, pythonify=True)
+            if clusters:
+                self.misp.attach_galaxy_cluster(misp_entity, clusters[0])
+
+    def _handle_vt_report(self, event: pymisp.MISPEvent, report: dict):
+        """Enrich MISP event using VirusTotal report."""
         attrs = report['data']['attributes']
-        _, ref_object = self.find_object_attr(
+        ref_attr, ref_object = self.find_object_attr(
             event, self.observable_value,
             INTELOWL_MISP_OBJECT_TYPE_MAP.get(self.classification)
         )
         positives, total = self.__calculate_detection_ratio(
             attrs.get('last_analysis_stats', {}))
+        vt_attributes = [('permalink', report['link']),
+                         ('detection-ratio', f'{positives}/{total}'),
+                         ('community-score', attrs.get('reputation', 0))]
 
-        vt_report.add_attribute('permalink', report['link'])
-        vt_report.add_attribute('detection-ratio', f'{positives}/{total}')
-        vt_report.add_attribute('community-score', attrs.get('reputation', 0))
-
-        vt_report.add_reference(
-            referenced_uuid=ref_object.uuid,
-            relationship_type='analysis-for',
-            comment='VirusTotal report'
+        self.handle_event_object(
+            event, '', 'virustotal-report', 'analysis-for', 'VirusTotal report',
+            ref_object, vt_attributes, ref_dir=-1, standalone=False
         )
 
-        event.add_object(vt_report)
+        aliases = []
+        aliases.append(attrs.get('sha1', ''))
+        aliases.append(attrs.get('md5', ''))
+        aliases.append(attrs.get('vhash', ''))
+        aliases.append(attrs.get('tlsh', ''))
+        aliases.append(attrs.get('ssdeep', ''))
+        aliases += attrs.get('names', [])
+        ref_object.add_attributes('alias', *aliases)
+
+        magic = attrs.get('magic', '')
+        if magic:
+            ref_object.add_attribute('architecture_execution_env', magic)
+
+        jarm = attrs.get('jarm', '')
+        if jarm:
+            self.handle_event_object(
+                event, jarm, 'jarm', 'has', 'IP address JARM hash',
+                ref_object, [('jarm', jarm)]
+            )
+
+        whois = attrs.get('whois', '')
+        if whois:
+            self.handle_event_object(
+                event, whois,
+                'whois', 'describes', 'whois information',
+                ref_object, [('text', whois)],
+                ref_dir=-1, standalone=False
+            )
+
+        ai_analysis_results = attrs.get('crowdsourced_ai_results', [])
+        for result in ai_analysis_results:
+            self.handle_event_object(
+                event, '', 'malware-analysis', 'verdicts', 'A verdict from crowdsourced AI',
+                ref_object, [('product', 'AI crowdsourced analysis'),
+                             ('result', result.get('verdict', 'unknown'))],
+                ref_dir=-1, standalone=False
+            )
+
+        yara_results = attrs.get('crowdsourced_yara_results', [])
+        for yara in yara_results:
+            rule_name = yara.get('rule_name')
+            self.handle_event_object(
+                event, rule_name,
+                'yara', 'matches', 'YARA matches for the malware',
+                ref_object, [('yara-rule-name', rule_name),
+                             ['reference', yara.get('source', '')]],
+            )
+
+        self._attach_galaxy(ref_attr, 'Country', attrs.get('country', ''))
+
+        for tag in attrs.get('tags', []):
+            ref_attr.add_tag(f'virusTotal:generic={tag}')
+
+        for tag in attrs.get('type_tags', []):
+            ref_attr.add_tag(f'virusTotal:file-type={tag}')
+
+        cls = attrs.get('popular_threat_classification', {})
+        for category in cls.get('popular_threat_category', []):
+            ref_attr.add_tag(
+                f'malware_classification:malware-category={category.get("value").title()}')
 
     def run(self):
         try:
@@ -82,7 +146,7 @@ class CustomMISP(CTIConnector, MISPMixin):
             _report = report.report
 
             if 'VirusTotal' in analyzer_name:
-                self._add_virustotal_object(event, _report)
+                self._handle_vt_report(event, _report)
 
         try:
             self.misp.update_event(event)
