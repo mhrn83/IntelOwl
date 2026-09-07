@@ -44,6 +44,11 @@ class CustomMISP(CTIConnector, MISPMixin):
 
     def _handle_vt_report(self, event: pymisp.MISPEvent, report: dict):
         """Enrich MISP event using VirusTotal report."""
+        _, vt_object = self.find_object_attr(
+            event, report['link'], 'virustotal-report')
+        if vt_object:
+            return
+
         attrs = report['data']['attributes']
         ref_attr, ref_object = self.find_object_attr(
             event, self.observable_value,
