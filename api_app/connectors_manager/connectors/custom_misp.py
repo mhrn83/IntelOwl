@@ -19,6 +19,18 @@ class CustomMISP(CTIConnector, MISPMixin):
     url: str
     _auth_key: str
 
+    abuseipdb_object_template: dict = dict()
+
+    @property
+    def _get_abuseipdb_object_template(self) -> dict:
+        """Gets *abuseipdb* object template from MISP instance."""
+        if self.abuseipdb_object_template:
+            return self.abuseipdb_object_template
+
+        self.abuseipdb_object_template = self.misp.get_raw_object_template(
+            'abuseipdb')
+        return self.abuseipdb_object_template
+
     def __calculate_detection_ratio(self, stats: dict) -> tuple:
         """"""
         excluded = {'type-unsupported', 'timeout',
@@ -42,7 +54,7 @@ class CustomMISP(CTIConnector, MISPMixin):
             if clusters:
                 self.misp.attach_galaxy_cluster(misp_entity, clusters[0])
 
-    def _handle_vt_report(self, event: pymisp.MISPEvent, report: dict):
+    def _handle_vt_report(self, event: pymisp.MISPEvent, ref: tuple, report: dict):
         """Enrich MISP event using VirusTotal report."""
         _, vt_object = self.find_object_attr(
             event, report['link'], 'virustotal-report')
@@ -50,10 +62,8 @@ class CustomMISP(CTIConnector, MISPMixin):
             return
 
         attrs = report['data']['attributes']
-        ref_attr, ref_object = self.find_object_attr(
-            event, self.observable_value,
-            INTELOWL_MISP_OBJECT_TYPE_MAP.get(self.classification)
-        )
+
+        ref_attr, ref_object = ref
         positives, total = self.__calculate_detection_ratio(
             attrs.get('last_analysis_stats', {}))
         vt_attributes = [('permalink', report['link']),
@@ -113,8 +123,6 @@ class CustomMISP(CTIConnector, MISPMixin):
                              ['reference', yara.get('source', '')]],
             )
 
-        self._attach_galaxy(ref_attr, 'Country', attrs.get('country', ''))
-
         for tag in attrs.get('tags', []):
             ref_attr.add_tag(f'virusTotal:generic={tag}')
 
@@ -125,6 +133,48 @@ class CustomMISP(CTIConnector, MISPMixin):
         for category in cls.get('popular_threat_category', []):
             ref_attr.add_tag(
                 f'malware_classification:malware-category={category.get("value").title()}')
+
+    def _handle_abuseipdb_report(self, event: pymisp.MISPEvent, ref: tuple, report: dict):
+        """Enrich MISP event using AbuseIPDB report."""
+        _, report_object = self.find_object_attr(
+            event, report['permalink'], 'abuseipdb')
+        if report_object:
+            return
+
+        data = report['data']
+        ref_attr, ref_object = ref
+        object_attr = [('abuse-confidence-score', data['abuseConfidenceScore']),
+                       ('permalink', report['permalink']),
+                       ('is-public', data['isPublic']),
+                       ('is-tor', data['isTor']),
+                       ('is-whitelisted', data['isWhitelisted'])]
+
+        self.handle_event_object(
+            event, '', 'abuseipdb', 'analysis-for', 'AbuseIPDB report',
+            ref_object, object_attr, ref_dir=-1, standalone=False,
+            custom_object_template=self._get_abuseipdb_object_template
+        )
+
+        confidence = data['abuseConfidenceScore']
+        if 0 <= confidence <= 25:
+            ref_attr.add_tag('abuseipdb:confidence=low')
+        elif 25 < confidence <= 50:
+            ref_attr.add_tag('abuseipdb:confidence=medium')
+        elif 50 < confidence <= 75:
+            ref_attr.add_tag('abuseipdb:confidence=medium-high')
+        elif 75 < confidence <= 100:
+            ref_attr.add_tag('abuseipdb:confidence=high')
+
+        reports = data.get('reports', [])
+        categories = set()
+        for r in reports:
+            for category in r.get('categories', []):
+                categories.add(category)
+
+        for category in categories:
+            ref_attr.add_tag(f'abuseipdb:category="{category}"')
+
+        self._attach_galaxy(ref_attr, 'Country', data.get('countryName', ''))
 
     def run(self):
         try:
@@ -143,6 +193,11 @@ class CustomMISP(CTIConnector, MISPMixin):
             raise ConnectorRunException(
                 f'MISP event with attribute {self.observable_value} not found.')
 
+        ref = self.find_object_attr(
+            event, self.observable_value,
+            INTELOWL_MISP_OBJECT_TYPE_MAP.get(self.classification)
+        )
+
         for report in self._job.analyzerreports.all():
             if report.status != 'SUCCESS':
                 continue
@@ -151,7 +206,9 @@ class CustomMISP(CTIConnector, MISPMixin):
             _report = report.report
 
             if 'VirusTotal' in analyzer_name:
-                self._handle_vt_report(event, _report)
+                self._handle_vt_report(event, ref, _report)
+            if 'AbuseIPDB' in analyzer_name:
+                self._handle_abuseipdb_report(event, ref, _report)
 
         try:
             self.misp.update_event(event)
